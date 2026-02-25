@@ -246,7 +246,7 @@ curl -fsSL https://agentralabs.tech/install/identity/server | bash
 | GitHub installer (desktop profile) | `curl -fsSL https://agentralabs.tech/install/identity/desktop \| bash` | Explicit desktop profile behavior |
 | GitHub installer (terminal profile) | `curl -fsSL https://agentralabs.tech/install/identity/terminal \| bash` | Installs binaries only; no desktop config writes |
 | GitHub installer (server profile) | `curl -fsSL https://agentralabs.tech/install/identity/server \| bash` | Installs binaries only; server-safe behavior |
-| crates.io paired crates (official) | `cargo install agentic-identity agentic-identity-mcp` | Installs `aid` and `agentic-identity-mcp` |
+| crates.io paired crates (official) | `cargo install agentic-identity-cli agentic-identity-mcp` | Installs `aid` and `agentic-identity-mcp` |
 | PyPI (SDK) | `pip install agentic-identity` | Python SDK wrapping FFI |
 | npm (wasm) | `npm install @agenticamem/identity` | WASM-based identity SDK for Node.js and browser |
 
@@ -265,7 +265,7 @@ If `.aid` files are on another machine, sync them to the server first.
 |:---|:---|
 | **Just give me identity** | Run the one-liner above |
 | **Python developer** | `pip install agentic-identity` |
-| **Rust developer** | `cargo install agentic-identity-mcp` |
+| **Rust developer** | `cargo install agentic-identity-cli agentic-identity-mcp` |
 | **From source** | `git clone ... && cargo build --release` |
 
 <details>
@@ -275,14 +275,14 @@ If `.aid` files are on another machine, sync them to the server first.
 
 **Rust:**
 ```bash
-cargo install agentic-identity           # Core CLI (aid)
+cargo install agentic-identity-cli       # CLI (aid)
 cargo install agentic-identity-mcp       # MCP server
 ```
 
 **Rust library:**
 ```toml
 [dependencies]
-agentic-identity = "0.1"
+agentic-identity = "0.2.2"
 ```
 
 **Python:**
@@ -486,10 +486,10 @@ This is a Cargo workspace monorepo containing the core library, CLI, MCP server,
 agentic-identity/
 ├── Cargo.toml                    # Workspace root
 ├── crates/
-│   ├── agentic-identity/         # Core library (crates.io: agentic-identity v0.1.1)
-│   ├── agentic-identity-cli/     # CLI tool: aid (crates.io: agentic-identity-cli v0.1.1)
-│   ├── agentic-identity-mcp/     # MCP server (crates.io: agentic-identity-mcp v0.1.1)
-│   └── agentic-identity-ffi/     # C FFI bindings (crates.io: agentic-identity-ffi v0.1.1)
+│   ├── agentic-identity/         # Core library (crates.io: agentic-identity v0.2.2)
+│   ├── agentic-identity-cli/     # CLI tool: aid (crates.io: agentic-identity-cli v0.2.2)
+│   ├── agentic-identity-mcp/     # MCP server (crates.io: agentic-identity-mcp v0.2.2)
+│   └── agentic-identity-ffi/     # C FFI bindings (crates.io: agentic-identity-ffi v0.2.2)
 ├── python/                       # Python SDK (PyPI: agentic-identity)
 ├── tests/                        # Integration + stress tests
 ├── benches/                      # Criterion benchmarks
@@ -516,7 +516,7 @@ cargo bench -p agentic-identity
 
 ---
 
-## Roadmap: v0.2.0 -- Remote Server Support
+## Roadmap: Next -- Remote Server Support
 
 The next release is planned to add HTTP/SSE transport for remote deployments. Track progress in [#1](https://github.com/agentralabs/agentic-identity/issues/1).
 
