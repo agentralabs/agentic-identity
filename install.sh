@@ -1,258 +1,694 @@
 #!/usr/bin/env bash
-# install.sh — AgenticIdentity Universal Installer
+# AgenticIdentity — one-liner install script
+# Downloads pre-built binaries when available and auto-configures detected MCP clients.
 #
 # Usage:
-#   curl -fsSL https://raw.githubusercontent.com/agentralabs/agentic-identity/main/install.sh | bash
-#   curl -fsSL https://raw.githubusercontent.com/agentralabs/agentic-identity/main/install.sh | bash -s -- --profile terminal
+#   curl -fsSL https://agentralabs.tech/install/identity | bash
 #
-# Profiles:
-#   desktop  (default) — Install binaries + auto-merge MCP config
-#   terminal           — Install binaries only
-#   server             — Install binaries + auth gate
+# Options:
+#   --version=X.Y.Z   Pin a specific version (default: latest)
+#   --dir=/path       Override install directory (default: ~/.local/bin)
+#   --profile=<name>  Install profile: desktop | terminal | server (default: desktop)
+#   --dry-run         Print actions without executing
 #
+# What it does:
+#   1. Installs aid and agentic-identity-mcp into ~/.local/bin/
+#   2. MERGES (NEVER overwrite) MCP config into detected MCP client configs
+#   3. Leaves all existing MCP servers untouched
+#
+# Requirements: curl, jq or python3
+
 set -euo pipefail
 
-# ── Colours ──────────────────────────────────────────────────────────────────
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-CYAN='\033[0;36m'
-NC='\033[0m'
-
-# ── Constants ────────────────────────────────────────────────────────────────
+# ── Constants ──────────────────────────────────────────────────────────
 REPO="agentralabs/agentic-identity"
-BINARY_NAME="aid"
-MCP_BINARY_NAME="agentic-identity-mcp"
-VERSION="0.1.0"
-INSTALL_DIR="${HOME}/.local/bin"
-AGENTIC_DIR="${HOME}/.agentic"
+CLI_BINARY_NAME="aid"
+BINARY_NAME="agentic-identity-mcp"
+SERVER_KEY="agentic-identity"
+INSTALL_DIR="${AGENTRA_INSTALL_DIR:-$HOME/.local/bin}"
+INSTALL_DIR_EXPLICIT=false
+VERSION="latest"
+PROFILE="${AGENTRA_INSTALL_PROFILE:-desktop}"
+DRY_RUN=false
+BAR_ONLY="${AGENTRA_INSTALL_BAR_ONLY:-1}"
+MCP_ENTRYPOINT=""
+PLATFORM=""
+HOST_OS=""
+SERVER_ARGS_JSON='[]'
+SERVER_ARGS_TEXT='[]'
+SERVER_CHECK_CMD_SUFFIX=""
+MCP_CONFIGURED_CLIENTS=()
+MCP_SCANNED_CONFIG_FILES=()
 
-# ── Profile Detection ────────────────────────────────────────────────────────
-PROFILE="${1:-desktop}"
-case "$PROFILE" in
-  --profile) PROFILE="${2:-desktop}" ;;
-  desktop|terminal|server) ;;
-  *) PROFILE="desktop" ;;
-esac
+# ── Parse arguments ──────────────────────────────────────────────────
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --version=*)
+            VERSION="${1#*=}"
+            shift
+            ;;
+        --version)
+            VERSION="${2:-}"
+            shift 2
+            ;;
+        --dir=*)
+            INSTALL_DIR="${1#*=}"
+            INSTALL_DIR_EXPLICIT=true
+            shift
+            ;;
+        --dir)
+            INSTALL_DIR="${2:-}"
+            INSTALL_DIR_EXPLICIT=true
+            shift 2
+            ;;
+        --profile=*)
+            PROFILE="${1#*=}"
+            shift
+            ;;
+        --profile)
+            PROFILE="${2:-}"
+            shift 2
+            ;;
+        --dry-run)
+            DRY_RUN=true
+            shift
+            ;;
+        --help|-h)
+            echo "Usage: install.sh [--version X.Y.Z|--version=X.Y.Z] [--dir /path|--dir=/path] [--profile desktop|terminal|server|--profile=desktop|terminal|server] [--dry-run]"
+            exit 0
+            ;;
+        desktop|terminal|server)
+            PROFILE="$1"
+            shift
+            ;;
+        *)
+            echo "Error: unknown option '$1'" >&2
+            exit 1
+            ;;
+    esac
+done
 
-# ── Functions ────────────────────────────────────────────────────────────────
+MCP_ENTRYPOINT="${INSTALL_DIR}/${BINARY_NAME}"
 
-info()  { echo -e "${BLUE}[info]${NC} $*"; }
-ok()    { echo -e "${GREEN}[ok]${NC} $*"; }
-warn()  { echo -e "${YELLOW}[warn]${NC} $*"; }
-err()   { echo -e "${RED}[error]${NC} $*" >&2; }
+# ── Progress output (bar-only mode by default) ───────────────────────
+exec 3>&1
+if [ "$BAR_ONLY" = "1" ] && [ "$DRY_RUN" = false ]; then
+    exec 1>/dev/null
+fi
 
+PROGRESS=0
+BAR_WIDTH=36
+
+draw_progress() {
+    local percent="$1"
+    local label="$2"
+    local filled=$((percent * BAR_WIDTH / 100))
+    local empty=$((BAR_WIDTH - filled))
+    printf "\r[" >&3
+    printf "%${filled}s" "" | tr " " "#" >&3
+    printf "%${empty}s" "" | tr " " "-" >&3
+    printf "] %3d%% %s" "$percent" "$label" >&3
+}
+
+set_progress() {
+    local percent="$1"
+    local label="$2"
+    PROGRESS="$percent"
+    draw_progress "$percent" "$label"
+}
+
+finish_progress() {
+    printf "\n" >&3
+}
+
+run_with_progress() {
+    local start="$1"
+    local end="$2"
+    local label="$3"
+    shift 3
+
+    local log_file
+    log_file="$(mktemp)"
+    local current="$start"
+
+    set_progress "$current" "$label"
+    "$@" >"$log_file" 2>&1 &
+    local cmd_pid=$!
+
+    while kill -0 "$cmd_pid" 2>/dev/null; do
+        if [ "$current" -lt $((end - 1)) ]; then
+            current=$((current + 1))
+            set_progress "$current" "$label"
+        fi
+        sleep 0.2
+    done
+
+    if ! wait "$cmd_pid"; then
+        finish_progress
+        echo "Install failed during: ${label}" >&3
+        tail -n 120 "$log_file" >&3 || true
+        rm -f "$log_file"
+        return 1
+    fi
+
+    rm -f "$log_file"
+    set_progress "$end" "$label"
+}
+
+validate_profile() {
+    case "$PROFILE" in
+        desktop|terminal|server) ;;
+        *)
+            echo "Error: invalid profile '${PROFILE}'. Use desktop, terminal, or server." >&2
+            exit 1
+            ;;
+    esac
+}
+
+# ── Dependencies ──────────────────────────────────────────────────────
+check_deps() {
+    if ! command -v curl >/dev/null 2>&1; then
+        echo "Error: 'curl' is required but not installed." >&2
+        exit 1
+    fi
+    if ! command -v jq >/dev/null 2>&1 && ! command -v python3 >/dev/null 2>&1; then
+        echo "Error: JSON merge requires 'jq' or 'python3'." >&2
+        echo "  Install jq (preferred) or python3, then rerun." >&2
+        exit 1
+    fi
+}
+
+# ── Platform detection ────────────────────────────────────────────────
 detect_platform() {
-  local os arch
-  os="$(uname -s | tr '[:upper:]' '[:lower:]')"
-  arch="$(uname -m)"
-  case "$arch" in
-    x86_64|amd64) arch="x86_64" ;;
-    arm64|aarch64) arch="aarch64" ;;
-    *) err "Unsupported architecture: $arch"; exit 1 ;;
-  esac
-  case "$os" in
-    darwin) PLATFORM="${arch}-apple-darwin" ;;
-    linux)  PLATFORM="${arch}-unknown-linux-gnu" ;;
-    *)      err "Unsupported OS: $os"; exit 1 ;;
-  esac
+    local os arch
+    os="$(uname -s | tr '[:upper:]' '[:lower:]')"
+    arch="$(uname -m)"
+
+    case "$os" in
+        darwin) HOST_OS="darwin" ;;
+        linux) HOST_OS="linux" ;;
+        *)
+            echo "Error: Unsupported OS: $os" >&2
+            exit 1
+            ;;
+    esac
+
+    case "$arch" in
+        x86_64|amd64) arch="x86_64" ;;
+        arm64|aarch64) arch="aarch64" ;;
+        *)
+            echo "Error: Unsupported architecture: $arch" >&2
+            exit 1
+            ;;
+    esac
+
+    if [ "$HOST_OS" = "darwin" ]; then
+        PLATFORM="${arch}-apple-darwin"
+    else
+        PLATFORM="${arch}-unknown-linux-gnu"
+    fi
 }
 
-ensure_dir() {
-  mkdir -p "$1"
+# ── Releases ──────────────────────────────────────────────────────────
+get_latest_version() {
+    curl -fsSL "https://api.github.com/repos/${REPO}/releases/latest" 2>/dev/null \
+        | jq -r '.tag_name // empty' 2>/dev/null || true
 }
 
-try_download_release() {
-  local url="https://github.com/${REPO}/releases/download/v${VERSION}"
-  local tarball="${BINARY_NAME}-${PLATFORM}.tar.gz"
+download_binaries() {
+    local version="$1"
+    local version_tag="$version"
+    local tarball="${CLI_BINARY_NAME}-${PLATFORM}.tar.gz"
+    local url="https://github.com/${REPO}/releases/download/${version_tag}/${tarball}"
 
-  info "Trying pre-built release for ${PLATFORM}..."
-  if curl -fsSL "${url}/${tarball}" -o "/tmp/${tarball}" 2>/dev/null; then
-    tar -xzf "/tmp/${tarball}" -C "${INSTALL_DIR}"
-    rm -f "/tmp/${tarball}"
-    ok "Installed pre-built binaries"
+    if [ "$DRY_RUN" = true ]; then
+        echo "  [dry-run] Would download: ${url}"
+        echo "  [dry-run] Would install to: ${INSTALL_DIR}/${CLI_BINARY_NAME}"
+        echo "  [dry-run] Would install to: ${INSTALL_DIR}/${BINARY_NAME}"
+        return 0
+    fi
+
+    local tmpdir
+    tmpdir="$(mktemp -d)"
+    mkdir -p "$INSTALL_DIR"
+
+    if ! curl -fsSL "$url" -o "${tmpdir}/${tarball}" 2>/dev/null; then
+        rm -rf "$tmpdir"
+        return 1
+    fi
+
+    if ! tar xzf "${tmpdir}/${tarball}" -C "$tmpdir"; then
+        rm -rf "$tmpdir"
+        return 1
+    fi
+
+    local cli_src
+    local mcp_src
+    cli_src="$(find "$tmpdir" -type f -name "${CLI_BINARY_NAME}" | head -n 1)"
+    mcp_src="$(find "$tmpdir" -type f -name "${BINARY_NAME}" | head -n 1)"
+
+    if [ -z "$cli_src" ] || [ -z "$mcp_src" ]; then
+        echo "Release artifact missing required binaries (need ${CLI_BINARY_NAME} and ${BINARY_NAME})." >&2
+        rm -rf "$tmpdir"
+        return 1
+    fi
+
+    cp "$cli_src" "${INSTALL_DIR}/${CLI_BINARY_NAME}"
+    cp "$mcp_src" "${INSTALL_DIR}/${BINARY_NAME}"
+    chmod +x "${INSTALL_DIR}/${CLI_BINARY_NAME}" "${INSTALL_DIR}/${BINARY_NAME}"
+    rm -rf "$tmpdir"
     return 0
-  fi
-  return 1
 }
 
-build_from_source() {
-  info "No pre-built release found. Building from source..."
+# ── Source fallback ───────────────────────────────────────────────────
+install_from_source() {
+    local git_url="https://github.com/${REPO}.git"
 
-  if ! command -v cargo &>/dev/null; then
-    err "Rust toolchain not found. Install from https://rustup.rs"
-    exit 1
-  fi
+    if [ "$DRY_RUN" = true ]; then
+        echo "  [dry-run] Would clone: ${git_url}"
+        echo "  [dry-run] Would build: cargo build --release --package agentic-identity-cli --package agentic-identity-mcp"
+        echo "  [dry-run] Would install to: ${INSTALL_DIR}/${CLI_BINARY_NAME}"
+        echo "  [dry-run] Would install to: ${INSTALL_DIR}/${BINARY_NAME}"
+        return 0
+    fi
 
-  local tmpdir
-  tmpdir="$(mktemp -d)"
-  trap "rm -rf ${tmpdir}" EXIT
+    if ! command -v cargo >/dev/null 2>&1; then
+        echo "Error: release artifacts are unavailable and cargo is not installed." >&2
+        echo "Install Rust/Cargo first: https://rustup.rs" >&2
+        exit 1
+    fi
+    if ! command -v git >/dev/null 2>&1; then
+        echo "Error: git is required for source fallback." >&2
+        exit 1
+    fi
 
-  info "Cloning repository..."
-  git clone --depth 1 "https://github.com/${REPO}.git" "${tmpdir}/agentic-identity"
+    local tmpdir
+    tmpdir="$(mktemp -d)"
 
-  info "Building release binaries..."
-  cd "${tmpdir}/agentic-identity"
-  cargo build --release --package agentic-identity-cli --package agentic-identity-mcp
+    run_with_progress 45 55 "Cloning source" \
+        git clone --depth 1 "$git_url" "${tmpdir}/agentic-identity"
 
-  cp "target/release/${BINARY_NAME}" "${INSTALL_DIR}/"
-  cp "target/release/${MCP_BINARY_NAME}" "${INSTALL_DIR}/"
+    (
+        cd "${tmpdir}/agentic-identity"
+        run_with_progress 55 85 "Building release binaries" \
+            cargo build --release --package agentic-identity-cli --package agentic-identity-mcp
+    )
 
-  ok "Built and installed from source"
+    mkdir -p "$INSTALL_DIR"
+    cp "${tmpdir}/agentic-identity/target/release/${CLI_BINARY_NAME}" "${INSTALL_DIR}/${CLI_BINARY_NAME}"
+    cp "${tmpdir}/agentic-identity/target/release/${BINARY_NAME}" "${INSTALL_DIR}/${BINARY_NAME}"
+    chmod +x "${INSTALL_DIR}/${CLI_BINARY_NAME}" "${INSTALL_DIR}/${BINARY_NAME}"
+    rm -rf "$tmpdir"
+}
+
+# ── Config merge helpers ──────────────────────────────────────────────
+record_mcp_client() {
+    local client_name="$1"
+    MCP_CONFIGURED_CLIENTS+=("$client_name")
+}
+
+record_mcp_config_path() {
+    local config_file="$1"
+    MCP_SCANNED_CONFIG_FILES+=("$config_file")
+}
+
+is_known_mcp_config_path() {
+    local config_file="$1"
+    local known
+    for known in "${MCP_SCANNED_CONFIG_FILES[@]}"; do
+        if [ "$known" = "$config_file" ]; then
+            return 0
+        fi
+    done
+    return 1
+}
+
+merge_config() {
+    local config_file="$1"
+    local config_dir
+    config_dir="$(dirname "$config_file")"
+
+    if [ "$DRY_RUN" = true ]; then
+        echo "    [dry-run] Would merge MCP entry into: ${config_file}"
+        return
+    fi
+
+    mkdir -p "$config_dir"
+
+    if command -v python3 >/dev/null 2>&1; then
+        MCP_ENTRYPOINT="$MCP_ENTRYPOINT" \
+        SERVER_ARGS_JSON="$SERVER_ARGS_JSON" \
+        SERVER_KEY="$SERVER_KEY" \
+        PROFILE="$PROFILE" \
+        AGENTIC_TOKEN="${AGENTIC_TOKEN:-}" \
+        CONFIG_FILE="$config_file" \
+        python3 - <<'PY'
+import json
+import os
+
+config_file = os.environ["CONFIG_FILE"]
+entry = {
+    "command": os.environ["MCP_ENTRYPOINT"],
+    "args": json.loads(os.environ["SERVER_ARGS_JSON"]),
+    "env": {},
+}
+
+if os.environ.get("PROFILE") == "server" and os.environ.get("AGENTIC_TOKEN"):
+    entry["env"]["AGENTIC_TOKEN"] = os.environ["AGENTIC_TOKEN"]
+
+try:
+    with open(config_file, "r", encoding="utf-8") as f:
+        data = json.load(f)
+except Exception:
+    data = {}
+
+if not isinstance(data, dict):
+    data = {}
+
+data.setdefault("mcpServers", {})
+data["mcpServers"][os.environ["SERVER_KEY"]] = entry
+
+with open(config_file, "w", encoding="utf-8") as f:
+    json.dump(data, f, indent=2)
+    f.write("\n")
+PY
+    else
+        local tmp_file
+        tmp_file="$(mktemp)"
+        if [ -f "$config_file" ]; then
+            cp "$config_file" "$tmp_file"
+        else
+            echo '{}' > "$tmp_file"
+        fi
+
+        jq \
+          --arg key "$SERVER_KEY" \
+          --arg cmd "$MCP_ENTRYPOINT" \
+          --argjson args "$SERVER_ARGS_JSON" \
+          '. as $root | if ($root|type) != "object" then {} else . end
+           | .mcpServers = (if (.mcpServers|type) == "object" then .mcpServers else {} end)
+           | .mcpServers[$key] = {command: $cmd, args: $args, env: {}}' \
+          "$tmp_file" > "$config_file"
+        rm -f "$tmp_file"
+    fi
+}
+
+configure_json_client_if_present() {
+    local client_name="$1"
+    local config_file="$2"
+    local detect_path="${3:-$(dirname "$config_file")}"
+
+    if [ -f "$config_file" ] || [ -d "$detect_path" ]; then
+        echo "  ${client_name}..."
+        merge_config "$config_file"
+        echo "  Done"
+        record_mcp_client "$client_name"
+        record_mcp_config_path "$config_file"
+    fi
+}
+
+configure_claude_desktop() {
+    local config_file
+    case "$HOST_OS" in
+        darwin)
+            config_file="$HOME/Library/Application Support/Claude/claude_desktop_config.json"
+            ;;
+        linux)
+            config_file="${XDG_CONFIG_HOME:-$HOME/.config}/Claude/claude_desktop_config.json"
+            ;;
+        *)
+            return
+            ;;
+    esac
+
+    echo "  Claude Desktop..."
+    merge_config "$config_file"
+    echo "  Done"
+    record_mcp_client "Claude Desktop"
+    record_mcp_config_path "$config_file"
+}
+
+configure_claude_code() {
+    local config_file="$HOME/.claude/mcp.json"
+    if [ -d "$HOME/.claude" ] || [ -f "$config_file" ]; then
+        echo "  Claude Code..."
+        merge_config "$config_file"
+        echo "  Done"
+        record_mcp_client "Claude Code"
+        record_mcp_config_path "$config_file"
+    fi
+}
+
+configure_codex() {
+    local codex_home="${CODEX_HOME:-$HOME/.codex}"
+    local codex_config="${codex_home}/config.toml"
+
+    if ! command -v codex >/dev/null 2>&1 && [ ! -d "$codex_home" ] && [ ! -f "$codex_config" ]; then
+        return
+    fi
+
+    echo "  Codex..."
+    if [ "$DRY_RUN" = true ]; then
+        echo "    [dry-run] Would run: codex mcp add ${SERVER_KEY} -- ${MCP_ENTRYPOINT}"
+    elif command -v codex >/dev/null 2>&1; then
+        codex mcp remove "$SERVER_KEY" >/dev/null 2>&1 || true
+        if ! codex mcp add "$SERVER_KEY" -- "$MCP_ENTRYPOINT" >/dev/null 2>&1; then
+            echo "    Warning: could not auto-configure Codex via CLI."
+            echo "    Run: codex mcp add ${SERVER_KEY} -- ${MCP_ENTRYPOINT}"
+            return
+        fi
+    else
+        mkdir -p "$codex_home"
+        if [ ! -f "$codex_config" ]; then
+            touch "$codex_config"
+        fi
+        {
+            echo ""
+            echo "[mcp_servers.${SERVER_KEY}]"
+            echo "command = \"${MCP_ENTRYPOINT}\""
+            echo "args = []"
+        } >> "$codex_config"
+    fi
+    echo "  Done"
+    record_mcp_client "Codex"
+    record_mcp_config_path "$codex_config"
+}
+
+configure_generic_mcp_json_files() {
+    local root
+    local file
+    local roots=(
+        "$HOME/.config"
+        "$HOME/Library/Application Support"
+        "$HOME/.cursor"
+        "$HOME/.windsurf"
+        "$HOME/.codeium"
+        "$HOME/.claude"
+    )
+
+    for root in "${roots[@]}"; do
+        [ -d "$root" ] || continue
+        while IFS= read -r file; do
+            [ -n "$file" ] || continue
+            if is_known_mcp_config_path "$file"; then
+                continue
+            fi
+            echo "  Generic MCP config (${file})..."
+            merge_config "$file"
+            echo "  Done"
+            record_mcp_client "Generic MCP JSON"
+            record_mcp_config_path "$file"
+        done < <(find "$root" -maxdepth 6 -type f \
+            \( -name "mcp.json" -o -name "mcp_config.json" -o -name "claude_desktop_config.json" -o -name "cline_mcp_settings.json" \) \
+            2>/dev/null | sort -u)
+    done
 }
 
 merge_mcp_config() {
-  # Merge agentic-identity into MCP config — NEVER overwrite existing servers
-  local config_dirs=(
-    "${HOME}/.config/claude"
-    "${HOME}/.cursor"
-    "${HOME}/.config/Code/User"
-    "${HOME}/.windsurf"
-  )
-  local config_file="claude_desktop_config.json"
-
-  local mcp_entry
-  mcp_entry=$(cat <<'MCPJSON'
-{
-  "command": "INSTALL_DIR/agentic-identity-mcp",
-  "args": [],
-  "env": {}
-}
-MCPJSON
-)
-  mcp_entry="${mcp_entry//INSTALL_DIR/${INSTALL_DIR}}"
-
-  for dir in "${config_dirs[@]}"; do
-    local full_path="${dir}/${config_file}"
-    if [ -d "$dir" ]; then
-      if [ -f "$full_path" ]; then
-        # Check if already configured
-        if grep -q "agentic-identity-mcp" "$full_path" 2>/dev/null; then
-          info "MCP config already contains agentic-identity in ${dir}"
-          continue
-        fi
-        # Merge into existing config using Python (available on macOS/Linux)
-        if command -v python3 &>/dev/null; then
-          python3 -c "
-import json, sys
-try:
-    with open('${full_path}', 'r') as f:
-        config = json.load(f)
-except:
-    config = {}
-config.setdefault('mcpServers', {})
-config['mcpServers']['agentic-identity'] = json.loads('''${mcp_entry}''')
-with open('${full_path}', 'w') as f:
-    json.dump(config, f, indent=2)
-print('Merged agentic-identity into ${full_path}')
-" && ok "Merged MCP config into ${dir}" || warn "Could not merge MCP config in ${dir}"
-        else
-          warn "python3 not found — skipping MCP config merge for ${dir}"
-        fi
-      else
-        # Create new config
-        ensure_dir "$dir"
-        echo "{\"mcpServers\":{\"agentic-identity\":${mcp_entry}}}" | python3 -m json.tool > "$full_path" 2>/dev/null || true
-        ok "Created MCP config at ${full_path}"
-      fi
+    # Merge agentic-identity into MCP config — NEVER overwrite existing servers.
+    configure_claude_desktop
+    configure_claude_code
+    configure_json_client_if_present "Cursor" "$HOME/.cursor/mcp.json" "$HOME/.cursor"
+    configure_json_client_if_present "Windsurf" "$HOME/.windsurf/mcp.json" "$HOME/.windsurf"
+    if [ "$HOST_OS" = "darwin" ]; then
+        configure_json_client_if_present "VS Code" "$HOME/Library/Application Support/Code/User/mcp.json" "$HOME/Library/Application Support/Code/User"
+        configure_json_client_if_present "VS Code + Cline" "$HOME/Library/Application Support/Code/User/globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json" "$HOME/Library/Application Support/Code/User/globalStorage/saoudrizwan.claude-dev"
+    else
+        configure_json_client_if_present "VS Code" "${XDG_CONFIG_HOME:-$HOME/.config}/Code/User/mcp.json" "${XDG_CONFIG_HOME:-$HOME/.config}/Code/User"
+        configure_json_client_if_present "VS Code + Cline" "${XDG_CONFIG_HOME:-$HOME/.config}/Code/User/globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json" "${XDG_CONFIG_HOME:-$HOME/.config}/Code/User/globalStorage/saoudrizwan.claude-dev"
     fi
-  done
+    configure_codex
+    configure_generic_mcp_json_files
+}
+
+# ── Output helpers ────────────────────────────────────────────────────
+print_client_help() {
+    local client
+    local configured_count="${#MCP_CONFIGURED_CLIENTS[@]}"
+
+    echo ""
+    echo "MCP client summary:"
+    if [ "$configured_count" -gt 0 ]; then
+        for client in "${MCP_CONFIGURED_CLIENTS[@]}"; do
+            echo "  - Configured: ${client}"
+        done
+    else
+        echo "  - No known MCP client config detected (auto-config skipped)"
+    fi
+    echo ""
+    echo "Universal MCP entry (works in any MCP client):"
+    echo "  command: ${MCP_ENTRYPOINT}"
+    echo "  args: ${SERVER_ARGS_TEXT}"
+    echo ""
+    echo "Quick terminal check:"
+    echo "  ${INSTALL_DIR}/${BINARY_NAME}${SERVER_CHECK_CMD_SUFFIX}"
+    echo "  (Ctrl+C to stop after startup check)"
+}
+
+print_profile_help() {
+    echo ""
+    echo "Install profile: ${PROFILE}"
+    case "$PROFILE" in
+        desktop)
+            echo "  - Binaries installed (aid + agentic-identity-mcp)"
+            echo "  - Detected MCP client configs merged (Claude/Codex/Cursor/Windsurf/VS Code/etc.)"
+            ;;
+        terminal)
+            echo "  - Binaries installed (aid + agentic-identity-mcp)"
+            echo "  - Detected MCP client configs merged (same as desktop profile)"
+            echo "  - Native terminal usage remains available"
+            ;;
+        server)
+            echo "  - Binaries installed (aid + agentic-identity-mcp)"
+            echo "  - No desktop config files were changed"
+            echo "  - Suitable for remote/server hosts"
+            echo "  - Server deployments should enforce auth (token/reverse-proxy/TLS)"
+            ;;
+    esac
+}
+
+print_terminal_server_help() {
+    echo ""
+    echo "Manual MCP config for any client:"
+    echo "  command: ${MCP_ENTRYPOINT}"
+    echo "  args: ${SERVER_ARGS_TEXT}"
+    echo ""
+    echo "Server authentication setup:"
+    echo "  TOKEN=\$(openssl rand -hex 32)"
+    echo "  export AGENTIC_TOKEN=\"\$TOKEN\""
+    echo "  # Clients must send: Authorization: Bearer \$TOKEN"
+    echo ""
+    echo "Quick terminal checks:"
+    echo "  ${INSTALL_DIR}/${CLI_BINARY_NAME} --help"
+    echo "  ${INSTALL_DIR}/${BINARY_NAME}${SERVER_CHECK_CMD_SUFFIX}"
+    echo "  (Ctrl+C to stop after startup check)"
+}
+
+print_post_install_next_steps() {
+    echo "" >&3
+    echo "What happens after installation:" >&3
+    echo "  1. ${SERVER_KEY} was installed as MCP server command: ${MCP_ENTRYPOINT}" >&3
+    if [ "$PROFILE" = "server" ]; then
+        echo "  2. Generate a token (openssl rand -hex 32) and set AGENTIC_TOKEN on the server." >&3
+        echo "  3. Start MCP with auth, connect clients, then restart clients." >&3
+        echo "  4. Optional feedback: open https://github.com/${REPO}/issues" >&3
+    elif [ "$PROFILE" = "desktop" ]; then
+        echo "  2. Restart any configured MCP client so it reloads MCP config." >&3
+        echo "  3. After restart, confirm '${SERVER_KEY}' appears in your MCP server list." >&3
+        echo "  4. Optional feedback: open https://github.com/${REPO}/issues" >&3
+    else
+        echo "  2. Restart your MCP client/system so it reloads MCP config." >&3
+        echo "  3. After restart, confirm '${SERVER_KEY}' appears in your MCP server list." >&3
+        echo "  4. Optional feedback: open https://github.com/${REPO}/issues" >&3
+    fi
 }
 
 check_path() {
-  if [[ ":${PATH}:" != *":${INSTALL_DIR}:"* ]]; then
-    warn "${INSTALL_DIR} is not in your PATH"
-    echo ""
-    echo "  Add to your shell profile:"
-    echo "    export PATH=\"\${HOME}/.local/bin:\${PATH}\""
-    echo ""
-  fi
+    if [[ ":$PATH:" != *":$INSTALL_DIR:"* ]]; then
+        echo "" >&3
+        echo "Note: Add ${INSTALL_DIR} to your PATH if not already:" >&3
+        echo "  export PATH=\"${INSTALL_DIR}:\$PATH\"" >&3
+        echo "" >&3
+        echo "Add this line to your shell profile to make it permanent." >&3
+    fi
 }
 
-print_completion() {
-  echo ""
-  echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-  echo -e "${GREEN}  AgenticIdentity installed successfully!${NC}"
-  echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-  echo ""
-  echo "  Profile: ${PROFILE}"
-  echo "  Version: ${VERSION}"
-  echo "  Binary:  ${INSTALL_DIR}/${BINARY_NAME}"
-  echo "  MCP:     ${INSTALL_DIR}/${MCP_BINARY_NAME}"
-  echo ""
-
-  case "$PROFILE" in
-    desktop)
-      echo "  Next steps:"
-      echo "    1. Restart your AI editor (Claude Desktop, Cursor, etc.)"
-      echo "    2. Ask your AI agent: \"Create a new identity for me\""
-      echo ""
-      ;;
-    terminal)
-      echo "  Next steps:"
-      echo "    1. Run: aid init"
-      echo "    2. Run: aid show"
-      echo ""
-      echo "  For MCP integration, add to your config:"
-      echo "    \"agentic-identity\": {"
-      echo "      \"command\": \"${INSTALL_DIR}/${MCP_BINARY_NAME}\""
-      echo "    }"
-      echo ""
-      ;;
-    server)
-      echo "  Next steps:"
-      echo "    1. Set AGENTIC_TOKEN environment variable"
-      echo "    2. Run: ${MCP_BINARY_NAME}"
-      echo ""
-      ;;
-  esac
-
-  echo -e "  ${BLUE}Docs:${NC} https://agentralabs.tech/docs"
-  echo -e "  ${BLUE}Repo:${NC} https://github.com/${REPO}"
-  echo ""
-}
-
-# ── Main ─────────────────────────────────────────────────────────────────────
-
+# ── Main ──────────────────────────────────────────────────────────────
 main() {
-  echo ""
-  echo -e "${CYAN}  AgenticIdentity Installer${NC}"
-  echo -e "  Profile: ${PROFILE} | Version: ${VERSION}"
-  echo ""
+    set_progress 0 "Starting installer"
+    echo "AgenticIdentity Installer"
+    echo "========================="
+    echo ""
 
-  detect_platform
-  info "Platform: ${PLATFORM}"
+    set_progress 10 "Checking prerequisites"
+    check_deps
 
-  ensure_dir "${INSTALL_DIR}"
-  ensure_dir "${AGENTIC_DIR}"
+    set_progress 20 "Detecting platform"
+    detect_platform
+    validate_profile
 
-  # Install binaries
-  if ! try_download_release; then
-    build_from_source
-  fi
+    if [ "$INSTALL_DIR_EXPLICIT" = false ] && [ -n "${AGENTRA_INSTALL_DIR:-}" ]; then
+        INSTALL_DIR="${AGENTRA_INSTALL_DIR}"
+    fi
+    MCP_ENTRYPOINT="${INSTALL_DIR}/${BINARY_NAME}"
 
-  chmod +x "${INSTALL_DIR}/${BINARY_NAME}" 2>/dev/null || true
-  chmod +x "${INSTALL_DIR}/${MCP_BINARY_NAME}" 2>/dev/null || true
+    echo "Platform: ${PLATFORM}"
+    echo "Profile: ${PROFILE}"
+    echo "Install dir: ${INSTALL_DIR}"
 
-  # Profile-specific setup
-  case "$PROFILE" in
-    desktop)
-      merge_mcp_config
-      ;;
-    terminal)
-      info "Terminal profile — skipping MCP config"
-      ;;
-    server)
-      info "Server profile — auth gate enabled"
-      if [ -z "${AGENTIC_TOKEN:-}" ]; then
-        warn "AGENTIC_TOKEN not set — server will require it at runtime"
-      fi
-      ;;
-  esac
+    set_progress 30 "Resolving release"
 
-  check_path
-  print_completion
+    local resolved_version="$VERSION"
+    if [ "$resolved_version" = "latest" ]; then
+        resolved_version="$(get_latest_version)"
+    fi
+
+    local installed_from_release=false
+    if [ -n "$resolved_version" ] && [ "$resolved_version" != "null" ]; then
+        echo "Version: ${resolved_version}"
+        if download_binaries "$resolved_version"; then
+            installed_from_release=true
+            set_progress 70 "Release binary installed"
+        else
+            echo "Release artifact not found for ${resolved_version}/${PLATFORM}; using source fallback."
+        fi
+    else
+        echo "No GitHub release found; using source fallback."
+    fi
+
+    if [ "$installed_from_release" = false ]; then
+        install_from_source
+    fi
+
+    set_progress 88 "Finalizing binaries"
+    if [ "$DRY_RUN" = false ]; then
+        chmod +x "${INSTALL_DIR}/${CLI_BINARY_NAME}" 2>/dev/null || true
+        chmod +x "${INSTALL_DIR}/${BINARY_NAME}" 2>/dev/null || true
+    fi
+
+    set_progress 90 "Applying profile setup"
+    if [ "$PROFILE" = "desktop" ] || [ "$PROFILE" = "terminal" ]; then
+        echo ""
+        echo "Configuring MCP clients..."
+        merge_mcp_config
+        print_client_help
+    else
+        print_terminal_server_help
+    fi
+
+    print_profile_help
+
+    set_progress 100 "Install complete"
+    finish_progress
+    echo "Install complete: AgenticIdentity (${PROFILE})" >&3
+    echo "" >&3
+    echo "Done! AgenticIdentity install completed." >&3
+    if [ "$PROFILE" = "desktop" ]; then
+        echo "Restart any configured MCP client to activate." >&3
+    fi
+
+    print_post_install_next_steps
+    check_path
 }
 
 main "$@"
