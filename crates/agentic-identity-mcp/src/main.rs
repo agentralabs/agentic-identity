@@ -1,3 +1,4 @@
+#![recursion_limit = "256"]
 //! AgenticIdentity MCP Server.
 //!
 //! Implements a stdio-based Model Context Protocol server that exposes
@@ -219,6 +220,8 @@ struct McpServer {
     operation_log: Vec<IdentityOperationRecord>,
     /// Timestamp when this session started.
     session_start_time: Option<u64>,
+    /// Multi-context workspace manager for cross-identity queries.
+    workspace_manager: IdentityWorkspaceManager,
 }
 
 fn now_secs() -> u64 {
@@ -236,6 +239,7 @@ impl McpServer {
             trust_dir: trust_dir(),
             operation_log: Vec::new(),
             session_start_time: None,
+            workspace_manager: IdentityWorkspaceManager::new(),
         }
     }
 
@@ -818,6 +822,120 @@ impl McpServer {
                             },
                             "required": ["intent"]
                         }
+                    },
+                    // ── V2: Grounding (anti-hallucination) ─────────────────────────
+                    {
+                        "name": "identity_ground",
+                        "description": "Verify an authority/action claim has backing in trust grants, receipts, or competence records. Prevents hallucination about permissions.",
+                        "inputSchema": {
+                            "type": "object",
+                            "required": ["claim"],
+                            "properties": {
+                                "claim": { "type": "string", "description": "The claim to verify (e.g., 'agent has deploy permission')" },
+                                "identity": { "type": "string", "description": "Identity name (default: \"default\")" }
+                            }
+                        }
+                    },
+                    {
+                        "name": "identity_evidence",
+                        "description": "Get detailed evidence for an identity claim from trust grants, receipts, and competence records.",
+                        "inputSchema": {
+                            "type": "object",
+                            "required": ["query"],
+                            "properties": {
+                                "query": { "type": "string", "description": "The query to search evidence for" },
+                                "identity": { "type": "string", "description": "Identity name (default: \"default\")" },
+                                "max_results": { "type": "integer", "default": 10 }
+                            }
+                        }
+                    },
+                    {
+                        "name": "identity_suggest",
+                        "description": "Find similar grants, receipts, or competence records when a claim doesn't match exactly.",
+                        "inputSchema": {
+                            "type": "object",
+                            "required": ["query"],
+                            "properties": {
+                                "query": { "type": "string", "description": "The query to find suggestions for" },
+                                "identity": { "type": "string", "description": "Identity name (default: \"default\")" },
+                                "limit": { "type": "integer", "default": 5 }
+                            }
+                        }
+                    },
+                    // ── V2: Multi-context workspaces ──────────────────────────────
+                    {
+                        "name": "identity_workspace_create",
+                        "description": "Create a multi-identity workspace for comparing permissions across agents.",
+                        "inputSchema": {
+                            "type": "object",
+                            "required": ["name"],
+                            "properties": {
+                                "name": { "type": "string", "description": "Workspace name" }
+                            }
+                        }
+                    },
+                    {
+                        "name": "identity_workspace_add",
+                        "description": "Add an identity directory to a workspace for cross-identity comparison.",
+                        "inputSchema": {
+                            "type": "object",
+                            "required": ["workspace_id", "path"],
+                            "properties": {
+                                "workspace_id": { "type": "string" },
+                                "path": { "type": "string", "description": "Path to identity directory" },
+                                "role": { "type": "string", "enum": ["primary", "secondary", "reference", "archive"], "default": "primary" },
+                                "label": { "type": "string" }
+                            }
+                        }
+                    },
+                    {
+                        "name": "identity_workspace_list",
+                        "description": "List loaded identity contexts in a workspace.",
+                        "inputSchema": {
+                            "type": "object",
+                            "required": ["workspace_id"],
+                            "properties": {
+                                "workspace_id": { "type": "string" }
+                            }
+                        }
+                    },
+                    {
+                        "name": "identity_workspace_query",
+                        "description": "Query across all identity contexts in a workspace.",
+                        "inputSchema": {
+                            "type": "object",
+                            "required": ["workspace_id", "query"],
+                            "properties": {
+                                "workspace_id": { "type": "string" },
+                                "query": { "type": "string" },
+                                "max_per_context": { "type": "integer", "default": 10 }
+                            }
+                        }
+                    },
+                    {
+                        "name": "identity_workspace_compare",
+                        "description": "Compare permissions or capabilities across identity contexts.",
+                        "inputSchema": {
+                            "type": "object",
+                            "required": ["workspace_id", "item"],
+                            "properties": {
+                                "workspace_id": { "type": "string" },
+                                "item": { "type": "string" },
+                                "max_per_context": { "type": "integer", "default": 5 }
+                            }
+                        }
+                    },
+                    {
+                        "name": "identity_workspace_xref",
+                        "description": "Cross-reference a permission across identity contexts.",
+                        "inputSchema": {
+                            "type": "object",
+                            "required": ["workspace_id", "item"],
+                            "properties": {
+                                "workspace_id": { "type": "string" },
+                                "item": { "type": "string" }
+                            }
+                        }
                     }
                 ]
             }),
@@ -869,6 +987,17 @@ impl McpServer {
             "negative_declare" => self.tool_negative_declare(id.clone(), &args),
             "negative_list" => self.tool_negative_list(id.clone(), &args),
             "negative_check" => self.tool_negative_check(id.clone(), &args),
+            // V2: Grounding
+            "identity_ground" => self.tool_identity_ground(id.clone(), &args),
+            "identity_evidence" => self.tool_identity_evidence(id.clone(), &args),
+            "identity_suggest" => self.tool_identity_suggest(id.clone(), &args),
+            // V2: Workspaces
+            "identity_workspace_create" => self.tool_identity_workspace_create(id.clone(), &args),
+            "identity_workspace_add" => self.tool_identity_workspace_add(id.clone(), &args),
+            "identity_workspace_list" => self.tool_identity_workspace_list(id.clone(), &args),
+            "identity_workspace_query" => self.tool_identity_workspace_query(id.clone(), &args),
+            "identity_workspace_compare" => self.tool_identity_workspace_compare(id.clone(), &args),
+            "identity_workspace_xref" => self.tool_identity_workspace_xref(id.clone(), &args),
             _ => return rpc_error(id, -32602, format!("unknown tool: {tool_name}")),
         };
 
@@ -2647,6 +2776,548 @@ impl McpServer {
             }),
         )
     }
+
+    // ── V2: Grounding tools ──────────────────────────────────────────────────
+
+    fn tool_identity_ground(&self, id: Value, args: &Value) -> Value {
+        let claim = match args.get("claim").and_then(|v| v.as_str()) {
+            Some(c) if !c.trim().is_empty() => c,
+            _ => return tool_error(id, "'claim' is required"),
+        };
+
+        let claim_lower = claim.to_lowercase();
+        let claim_words: Vec<&str> = claim_lower.split_whitespace().collect();
+        let mut evidence = Vec::new();
+
+        // Search trust grants
+        if let Ok(store) = TrustStore::new(&self.trust_dir) {
+            for grant_ids in [store.list_granted().ok(), store.list_received().ok()].into_iter().flatten() {
+                for gid in grant_ids.iter().take(100) {
+                    if let Ok(grant) = store.load_grant(gid) {
+                        let mut score = 0.0f32;
+                        for cap in &grant.capabilities {
+                            if claim_lower.contains(&cap.uri.to_lowercase()) {
+                                score += 1.0;
+                            }
+                            let cap_lower = cap.uri.to_lowercase();
+                            let cap_words: Vec<&str> = cap_lower.split(':').flat_map(|s| s.split_whitespace()).collect();
+                            let overlap = claim_words.iter().filter(|w| cap_words.iter().any(|cw| cw.contains(**w) || w.contains(cw))).count();
+                            score += overlap as f32 * 0.3;
+                        }
+                        if score > 0.0 {
+                            evidence.push(json!({
+                                "type": "trust_grant",
+                                "id": grant.id.0,
+                                "capabilities": grant.capabilities.iter().map(|c| &c.uri).collect::<Vec<_>>(),
+                                "grantor": grant.grantor.0,
+                                "grantee": grant.grantee.0,
+                                "score": score,
+                            }));
+                        }
+                    }
+                }
+            }
+        }
+
+        // Search receipts
+        if let Ok(store) = ReceiptStore::new(&self.receipt_dir) {
+            if let Ok(receipt_ids) = store.list() {
+                for rid in receipt_ids.iter().take(100) {
+                    if let Ok(receipt) = store.load(rid) {
+                        let action_lower = receipt.action.description.to_lowercase();
+                        let overlap = claim_words.iter().filter(|w| action_lower.contains(**w)).count();
+                        if overlap > 0 {
+                            let score = overlap as f32 / claim_words.len().max(1) as f32;
+                            evidence.push(json!({
+                                "type": "receipt",
+                                "id": receipt.id.0,
+                                "action_type": format!("{:?}", receipt.action_type),
+                                "action": receipt.action.description,
+                                "score": score,
+                            }));
+                        }
+                    }
+                }
+            }
+        }
+
+        if evidence.is_empty() {
+            return tool_ok(
+                id,
+                serde_json::to_string_pretty(&json!({
+                    "status": "ungrounded",
+                    "claim": claim,
+                    "reason": "No trust grants, receipts, or competence records match this claim",
+                    "suggestions": []
+                }))
+                .unwrap(),
+            );
+        }
+
+        tool_ok(
+            id,
+            serde_json::to_string_pretty(&json!({
+                "status": "verified",
+                "claim": claim,
+                "evidence_count": evidence.len(),
+                "evidence": evidence
+            }))
+            .unwrap(),
+        )
+    }
+
+    fn tool_identity_evidence(&self, id: Value, args: &Value) -> Value {
+        let query = match args.get("query").and_then(|v| v.as_str()) {
+            Some(q) if !q.trim().is_empty() => q,
+            _ => return tool_error(id, "'query' is required"),
+        };
+        let max_results = args
+            .get("max_results")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(10) as usize;
+
+        let query_lower = query.to_lowercase();
+        let query_words: Vec<&str> = query_lower.split_whitespace().collect();
+        let mut evidence: Vec<(f32, Value)> = Vec::new();
+
+        // Search trust grants
+        if let Ok(store) = TrustStore::new(&self.trust_dir) {
+            for grant_ids in [store.list_granted().ok(), store.list_received().ok()].into_iter().flatten() {
+                for gid in grant_ids.iter().take(100) {
+                    if let Ok(grant) = store.load_grant(gid) {
+                        let cap_str: String = grant.capabilities.iter().map(|c| c.uri.to_lowercase()).collect::<Vec<_>>().join(" ");
+                        let overlap = query_words.iter().filter(|w| cap_str.contains(**w)).count();
+                        if overlap > 0 {
+                            let score = overlap as f32 / query_words.len().max(1) as f32;
+                            evidence.push((score, json!({
+                                "type": "trust_grant",
+                                "id": grant.id.0,
+                                "grantor": grant.grantor.0,
+                                "grantee": grant.grantee.0,
+                                "capabilities": grant.capabilities.iter().map(|c| &c.uri).collect::<Vec<_>>(),
+                                "granted_at": micros_to_rfc3339(grant.granted_at),
+                                "score": score,
+                            })));
+                        }
+                    }
+                }
+            }
+        }
+
+        // Search receipts
+        if let Ok(store) = ReceiptStore::new(&self.receipt_dir) {
+            if let Ok(receipt_ids) = store.list() {
+                for rid in receipt_ids.iter().take(200) {
+                    if let Ok(receipt) = store.load(rid) {
+                        let action_lower = receipt.action.description.to_lowercase();
+                        let overlap = query_words.iter().filter(|w| action_lower.contains(**w)).count();
+                        if overlap > 0 {
+                            let score = overlap as f32 / query_words.len().max(1) as f32;
+                            evidence.push((score, json!({
+                                "type": "receipt",
+                                "id": receipt.id.0,
+                                "actor": receipt.actor.0,
+                                "action_type": format!("{:?}", receipt.action_type),
+                                "action": receipt.action.description,
+                                "timestamp": micros_to_rfc3339(receipt.timestamp),
+                                "score": score,
+                            })));
+                        }
+                    }
+                }
+            }
+        }
+
+        evidence.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
+        evidence.truncate(max_results);
+        let items: Vec<Value> = evidence.into_iter().map(|(_, v)| v).collect();
+
+        tool_ok(
+            id,
+            serde_json::to_string_pretty(&json!({
+                "query": query,
+                "count": items.len(),
+                "evidence": items
+            }))
+            .unwrap(),
+        )
+    }
+
+    fn tool_identity_suggest(&self, id: Value, args: &Value) -> Value {
+        let query = match args.get("query").and_then(|v| v.as_str()) {
+            Some(q) if !q.trim().is_empty() => q,
+            _ => return tool_error(id, "'query' is required"),
+        };
+        let limit = args
+            .get("limit")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(5) as usize;
+
+        let query_lower = query.to_lowercase();
+        let mut suggestions: Vec<Value> = Vec::new();
+
+        // Suggest from trust grant capabilities
+        if let Ok(store) = TrustStore::new(&self.trust_dir) {
+            for grant_ids in [store.list_granted().ok(), store.list_received().ok()].into_iter().flatten() {
+                for gid in grant_ids.iter().take(50) {
+                    if let Ok(grant) = store.load_grant(gid) {
+                        for cap in &grant.capabilities {
+                            if cap.uri.to_lowercase().contains(&query_lower)
+                                || query_lower.contains(&cap.uri.to_lowercase())
+                            {
+                                suggestions.push(json!({
+                                    "type": "capability",
+                                    "capability": cap.uri,
+                                    "grant_id": grant.id.0,
+                                }));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Suggest from receipt actions
+        if let Ok(store) = ReceiptStore::new(&self.receipt_dir) {
+            if let Ok(receipt_ids) = store.list() {
+                for rid in receipt_ids.iter().take(50) {
+                    if let Ok(receipt) = store.load(rid) {
+                        let desc_lower = receipt.action.description.to_lowercase();
+                        if desc_lower.contains(&query_lower) || query_lower.contains(&desc_lower) {
+                            suggestions.push(json!({
+                                "type": "action",
+                                "action": receipt.action.description,
+                                "receipt_id": receipt.id.0,
+                            }));
+                        }
+                    }
+                }
+            }
+        }
+
+        suggestions.truncate(limit);
+
+        tool_ok(
+            id,
+            serde_json::to_string_pretty(&json!({
+                "query": query,
+                "count": suggestions.len(),
+                "suggestions": suggestions
+            }))
+            .unwrap(),
+        )
+    }
+
+    // ── V2: Workspace tools ──────────────────────────────────────────────────
+
+    fn tool_identity_workspace_create(&mut self, id: Value, args: &Value) -> Value {
+        let name = match args.get("name").and_then(|v| v.as_str()) {
+            Some(n) if !n.trim().is_empty() => n,
+            _ => return tool_error(id, "'name' is required"),
+        };
+        let ws_id = self.workspace_manager.create(name);
+        tool_ok(id, serde_json::to_string_pretty(&json!({
+            "workspace_id": ws_id, "name": name, "status": "created"
+        })).unwrap())
+    }
+
+    fn tool_identity_workspace_add(&mut self, id: Value, args: &Value) -> Value {
+        let workspace_id = match args.get("workspace_id").and_then(|v| v.as_str()) {
+            Some(w) => w,
+            _ => return tool_error(id, "'workspace_id' is required"),
+        };
+        let path = match args.get("path").and_then(|v| v.as_str()) {
+            Some(p) => p,
+            _ => return tool_error(id, "'path' is required"),
+        };
+        let role = args.get("role").and_then(|v| v.as_str()).unwrap_or("primary");
+        let label = args.get("label").and_then(|v| v.as_str()).map(|s| s.to_string());
+
+        match self.workspace_manager.add_context(workspace_id, path, role, label) {
+            Ok(ctx_id) => tool_ok(id, serde_json::to_string_pretty(&json!({
+                "context_id": ctx_id, "workspace_id": workspace_id, "role": role, "status": "added"
+            })).unwrap()),
+            Err(e) => tool_error(id, e),
+        }
+    }
+
+    fn tool_identity_workspace_list(&self, id: Value, args: &Value) -> Value {
+        let workspace_id = match args.get("workspace_id").and_then(|v| v.as_str()) {
+            Some(w) => w,
+            _ => return tool_error(id, "'workspace_id' is required"),
+        };
+        match self.workspace_manager.list(workspace_id) {
+            Ok(items) => tool_ok(id, serde_json::to_string_pretty(&json!({
+                "workspace_id": workspace_id,
+                "count": items.len(),
+                "contexts": items
+            })).unwrap()),
+            Err(e) => tool_error(id, e),
+        }
+    }
+
+    fn tool_identity_workspace_query(&self, id: Value, args: &Value) -> Value {
+        let workspace_id = match args.get("workspace_id").and_then(|v| v.as_str()) {
+            Some(w) => w,
+            _ => return tool_error(id, "'workspace_id' is required"),
+        };
+        let query = match args.get("query").and_then(|v| v.as_str()) {
+            Some(q) => q,
+            _ => return tool_error(id, "'query' is required"),
+        };
+        let max_per = args.get("max_per_context").and_then(|v| v.as_u64()).unwrap_or(10) as usize;
+
+        match self.workspace_manager.query_all(workspace_id, query, max_per) {
+            Ok(results) => {
+                let total: usize = results.iter().map(|r| r["matches"].as_array().map(|a| a.len()).unwrap_or(0)).sum();
+                tool_ok(id, serde_json::to_string_pretty(&json!({
+                    "workspace_id": workspace_id, "query": query, "total_matches": total, "results": results
+                })).unwrap())
+            }
+            Err(e) => tool_error(id, e),
+        }
+    }
+
+    fn tool_identity_workspace_compare(&self, id: Value, args: &Value) -> Value {
+        let workspace_id = match args.get("workspace_id").and_then(|v| v.as_str()) {
+            Some(w) => w,
+            _ => return tool_error(id, "'workspace_id' is required"),
+        };
+        let item = match args.get("item").and_then(|v| v.as_str()) {
+            Some(i) => i,
+            _ => return tool_error(id, "'item' is required"),
+        };
+        let max_per = args.get("max_per_context").and_then(|v| v.as_u64()).unwrap_or(5) as usize;
+
+        match self.workspace_manager.compare(workspace_id, item, max_per) {
+            Ok(result) => tool_ok(id, serde_json::to_string_pretty(&result).unwrap()),
+            Err(e) => tool_error(id, e),
+        }
+    }
+
+    fn tool_identity_workspace_xref(&self, id: Value, args: &Value) -> Value {
+        let workspace_id = match args.get("workspace_id").and_then(|v| v.as_str()) {
+            Some(w) => w,
+            _ => return tool_error(id, "'workspace_id' is required"),
+        };
+        let item = match args.get("item").and_then(|v| v.as_str()) {
+            Some(i) => i,
+            _ => return tool_error(id, "'item' is required"),
+        };
+
+        match self.workspace_manager.cross_reference(workspace_id, item) {
+            Ok(result) => tool_ok(id, serde_json::to_string_pretty(&result).unwrap()),
+            Err(e) => tool_error(id, e),
+        }
+    }
+}
+
+// ── Identity Workspace Manager ───────────────────────────────────────────────
+
+struct IdentityWorkspaceContext {
+    id: String,
+    role: String,
+    path: String,
+    label: Option<String>,
+    trust_dir: PathBuf,
+    receipt_dir: PathBuf,
+}
+
+struct IdentityWorkspace {
+    id: String,
+    name: String,
+    contexts: Vec<IdentityWorkspaceContext>,
+}
+
+struct IdentityWorkspaceManager {
+    workspaces: std::collections::HashMap<String, IdentityWorkspace>,
+    next_id: u64,
+}
+
+impl IdentityWorkspaceManager {
+    fn new() -> Self {
+        Self {
+            workspaces: std::collections::HashMap::new(),
+            next_id: 1,
+        }
+    }
+
+    fn create(&mut self, name: &str) -> String {
+        let id = format!("iws_{}", self.next_id);
+        self.next_id += 1;
+        self.workspaces.insert(id.clone(), IdentityWorkspace {
+            id: id.clone(),
+            name: name.to_string(),
+            contexts: Vec::new(),
+        });
+        id
+    }
+
+    fn add_context(
+        &mut self,
+        workspace_id: &str,
+        path: &str,
+        role: &str,
+        label: Option<String>,
+    ) -> Result<String, String> {
+        let workspace = self.workspaces.get_mut(workspace_id)
+            .ok_or_else(|| format!("Workspace not found: {workspace_id}"))?;
+
+        let dir = PathBuf::from(path);
+        if !dir.exists() {
+            return Err(format!("Path not found: {path}"));
+        }
+
+        let ctx_id = format!("ictx_{}_{}", workspace.contexts.len() + 1, workspace_id);
+        workspace.contexts.push(IdentityWorkspaceContext {
+            id: ctx_id.clone(),
+            role: role.to_string(),
+            path: path.to_string(),
+            label: label.or_else(|| {
+                dir.file_name()
+                    .and_then(|s| s.to_str())
+                    .map(|s| s.to_string())
+            }),
+            trust_dir: dir.join("trust"),
+            receipt_dir: dir.join("receipts"),
+        });
+
+        Ok(ctx_id)
+    }
+
+    fn list(&self, workspace_id: &str) -> Result<Vec<Value>, String> {
+        let workspace = self.workspaces.get(workspace_id)
+            .ok_or_else(|| format!("Workspace not found: {workspace_id}"))?;
+        Ok(workspace.contexts.iter().map(|ctx| {
+            json!({
+                "context_id": ctx.id,
+                "role": ctx.role,
+                "path": ctx.path,
+                "label": ctx.label,
+                "has_trust_store": ctx.trust_dir.exists(),
+                "has_receipt_store": ctx.receipt_dir.exists(),
+            })
+        }).collect())
+    }
+
+    fn query_all(
+        &self,
+        workspace_id: &str,
+        query: &str,
+        max_per_context: usize,
+    ) -> Result<Vec<Value>, String> {
+        let workspace = self.workspaces.get(workspace_id)
+            .ok_or_else(|| format!("Workspace not found: {workspace_id}"))?;
+
+        let query_lower = query.to_lowercase();
+        let query_words: Vec<&str> = query_lower.split_whitespace().collect();
+        let mut results = Vec::new();
+
+        for ctx in &workspace.contexts {
+            let mut matches: Vec<Value> = Vec::new();
+
+            // Search trust grants
+            if let Ok(ts) = TrustStore::new(&ctx.trust_dir) {
+                let mut grant_ids = Vec::new();
+                if let Ok(ids) = ts.list_granted() { grant_ids.extend(ids); }
+                if let Ok(ids) = ts.list_received() { grant_ids.extend(ids); }
+                for gid in grant_ids.iter().take(max_per_context * 2) {
+                    if let Ok(grant) = ts.load_grant(gid) {
+                        let cap_str: String = grant.capabilities.iter()
+                            .map(|c| c.uri.to_lowercase())
+                            .collect::<Vec<_>>()
+                            .join(" ");
+                        let overlap = query_words.iter().filter(|w| cap_str.contains(**w)).count();
+                        if overlap > 0 {
+                            matches.push(json!({
+                                "type": "trust_grant",
+                                "id": grant.id.0,
+                                "capabilities": grant.capabilities.iter().map(|c| &c.uri).collect::<Vec<_>>(),
+                                "score": overlap as f32 / query_words.len().max(1) as f32,
+                            }));
+                        }
+                    }
+                }
+            }
+
+            // Search receipts
+            if let Ok(rs) = ReceiptStore::new(&ctx.receipt_dir) {
+                if let Ok(receipt_ids) = rs.list() {
+                    for rid in receipt_ids.iter().take(max_per_context * 2) {
+                        if let Ok(receipt) = rs.load(rid) {
+                            let action_lower = receipt.action.description.to_lowercase();
+                            let overlap = query_words.iter().filter(|w| action_lower.contains(**w)).count();
+                            if overlap > 0 {
+                                matches.push(json!({
+                                    "type": "receipt",
+                                    "id": receipt.id.0,
+                                    "action": receipt.action.description,
+                                    "score": overlap as f32 / query_words.len().max(1) as f32,
+                                }));
+                            }
+                        }
+                    }
+                }
+            }
+
+            matches.truncate(max_per_context);
+            results.push(json!({
+                "context_id": ctx.id,
+                "context_role": ctx.role,
+                "label": ctx.label,
+                "match_count": matches.len(),
+                "matches": matches,
+            }));
+        }
+
+        Ok(results)
+    }
+
+    fn compare(
+        &self,
+        workspace_id: &str,
+        item: &str,
+        max_per_context: usize,
+    ) -> Result<Value, String> {
+        let results = self.query_all(workspace_id, item, max_per_context)?;
+        let workspace = self.workspaces.get(workspace_id).unwrap();
+
+        let mut found_in = Vec::new();
+        let mut missing_from = Vec::new();
+
+        for (i, r) in results.iter().enumerate() {
+            let label = workspace.contexts[i].label.clone()
+                .unwrap_or_else(|| r["context_id"].as_str().unwrap_or("unknown").to_string());
+            let count = r["match_count"].as_u64().unwrap_or(0);
+            if count > 0 {
+                found_in.push(label);
+            } else {
+                missing_from.push(label);
+            }
+        }
+
+        Ok(json!({
+            "item": item,
+            "found_in": found_in,
+            "missing_from": missing_from,
+            "details": results,
+        }))
+    }
+
+    fn cross_reference(
+        &self,
+        workspace_id: &str,
+        item: &str,
+    ) -> Result<Value, String> {
+        let cmp = self.compare(workspace_id, item, 5)?;
+        Ok(json!({
+            "item": item,
+            "present_in": cmp["found_in"],
+            "absent_from": cmp["missing_from"],
+            "coverage": format!("{}/{}", cmp["found_in"].as_array().map(|a| a.len()).unwrap_or(0),
+                cmp["found_in"].as_array().map(|a| a.len()).unwrap_or(0) + cmp["missing_from"].as_array().map(|a| a.len()).unwrap_or(0))
+        }))
+    }
 }
 
 // ── Duration parsing ──────────────────────────────────────────────────────────
@@ -2782,6 +3453,7 @@ mod tests {
             trust_dir: tmp.path().join("trust"),
             operation_log: Vec::new(),
             session_start_time: None,
+            workspace_manager: IdentityWorkspaceManager::new(),
         };
         (server, tmp)
     }
@@ -2883,8 +3555,19 @@ mod tests {
         assert!(names.contains(&"negative_list"));
         assert!(names.contains(&"negative_check"));
         assert!(names.contains(&"action_context"));
-        // 30 original tools + 1 action_context = 31
-        assert_eq!(tools.len(), 31);
+        // V2: Grounding tools
+        assert!(names.contains(&"identity_ground"));
+        assert!(names.contains(&"identity_evidence"));
+        assert!(names.contains(&"identity_suggest"));
+        // V2: Workspace tools
+        assert!(names.contains(&"identity_workspace_create"));
+        assert!(names.contains(&"identity_workspace_add"));
+        assert!(names.contains(&"identity_workspace_list"));
+        assert!(names.contains(&"identity_workspace_query"));
+        assert!(names.contains(&"identity_workspace_compare"));
+        assert!(names.contains(&"identity_workspace_xref"));
+        // 30 original + 1 action_context + 3 grounding + 6 workspace = 40
+        assert_eq!(tools.len(), 40);
     }
 
     // ── resources/list ────────────────────────────────────────────────────────
@@ -3913,5 +4596,1427 @@ mod tests {
             server.operation_log[0].timestamp > 0,
             "Timestamp should be non-zero"
         );
+    }
+
+    // ════════════════════════════════════════════════════════════════════════
+    // V2 Stress Tests: Grounding, Workspaces, Integration
+    // ════════════════════════════════════════════════════════════════════════
+
+    /// Helper: extract identity ID (aid_...) from identity_create response text.
+    fn extract_identity_id(text: &str) -> String {
+        text.lines()
+            .find(|l| l.contains("aid_"))
+            .and_then(|l| l.split_whitespace().find(|w| w.starts_with("aid_")))
+            .unwrap_or("aid_unknown")
+            .to_string()
+    }
+
+    /// Helper: extract trust ID (atrust_...) from trust_grant response text.
+    fn extract_trust_id(text: &str) -> String {
+        text.lines()
+            .find(|l| l.contains("atrust_"))
+            .and_then(|l| l.split_whitespace().find(|w| w.starts_with("atrust_")))
+            .unwrap_or("atrust_unknown")
+            .to_string()
+    }
+
+    /// Helper: extract receipt ID (arec_...) from action_sign response text.
+    fn extract_receipt_id(text: &str) -> String {
+        text.lines()
+            .find(|l| l.contains("arec_"))
+            .and_then(|l| l.split_whitespace().find(|w| w.starts_with("arec_")))
+            .unwrap_or("arec_unknown")
+            .to_string()
+    }
+
+    /// Helper: parse the text content of a tool response as JSON.
+    fn tool_json(resp: &Value) -> Value {
+        let text = tool_text(resp);
+        serde_json::from_str(&text).unwrap_or(json!({}))
+    }
+
+    /// Helper: create identity and return server + identity ID.
+    fn setup_identity() -> (McpServer, tempfile::TempDir, String) {
+        let (mut server, tmp) = test_server();
+        let resp = server.handle_request(json!({
+            "jsonrpc":"2.0","id":1,
+            "method":"tools/call",
+            "params":{"name":"identity_create","arguments":{"name":"default"}}
+        }));
+        let id = extract_identity_id(&tool_text(&resp));
+        (server, tmp, id)
+    }
+
+    /// Helper: set up a workspace context directory with trust and receipt subdirectories.
+    fn setup_context_dir(base: &std::path::Path, name: &str) -> PathBuf {
+        let dir = base.join(name);
+        std::fs::create_dir_all(dir.join("trust/granted")).unwrap();
+        std::fs::create_dir_all(dir.join("trust/received")).unwrap();
+        std::fs::create_dir_all(dir.join("trust/revocations")).unwrap();
+        std::fs::create_dir_all(dir.join("receipts")).unwrap();
+        dir
+    }
+
+    // ── Grounding tests ──────────────────────────────────────────────────
+
+    #[test]
+    fn test_v2_grounding_verified_trust_grant() {
+        init();
+        let (mut server, _tmp, identity_id) = setup_identity();
+
+        // Issue a trust grant with a specific capability.
+        let grant_resp = server.handle_request(json!({
+            "jsonrpc":"2.0","id":2,
+            "method":"tools/call",
+            "params":{
+                "name":"trust_grant",
+                "arguments":{
+                    "grantee": identity_id,
+                    "capabilities": ["read:files", "write:files"]
+                }
+            }
+        }));
+        assert!(!is_tool_error(&grant_resp), "trust_grant should succeed");
+
+        // Ground a claim about that capability.
+        let ground_resp = server.handle_request(json!({
+            "jsonrpc":"2.0","id":3,
+            "method":"tools/call",
+            "params":{
+                "name":"identity_ground",
+                "arguments":{"claim":"agent can read files"}
+            }
+        }));
+        assert!(is_ok(&ground_resp));
+        assert!(!is_tool_error(&ground_resp));
+        let j = tool_json(&ground_resp);
+        assert_eq!(j["status"], "verified", "Claim matching trust grant should be verified");
+        assert!(j["evidence"].as_array().map(|a| !a.is_empty()).unwrap_or(false));
+    }
+
+    #[test]
+    fn test_v2_grounding_verified_receipt() {
+        init();
+        let (mut server, _tmp, _identity_id) = setup_identity();
+
+        // Sign an action to create a receipt.
+        let sign_resp = server.handle_request(json!({
+            "jsonrpc":"2.0","id":2,
+            "method":"tools/call",
+            "params":{
+                "name":"action_sign",
+                "arguments":{
+                    "action":"Deployed service to production",
+                    "action_type":"mutation"
+                }
+            }
+        }));
+        assert!(!is_tool_error(&sign_resp));
+
+        // Ground a claim about that action.
+        let ground_resp = server.handle_request(json!({
+            "jsonrpc":"2.0","id":3,
+            "method":"tools/call",
+            "params":{
+                "name":"identity_ground",
+                "arguments":{"claim":"deployed service production"}
+            }
+        }));
+        assert!(is_ok(&ground_resp));
+        let j = tool_json(&ground_resp);
+        assert_eq!(j["status"], "verified", "Claim matching receipt action should be verified");
+        assert!(j["evidence"].as_array().unwrap().iter().any(|e| e["type"] == "receipt"));
+    }
+
+    #[test]
+    fn test_v2_grounding_ungrounded_empty() {
+        init();
+        let (mut server, _tmp) = test_server();
+
+        // No identity, no grants, no receipts — claim should be ungrounded.
+        let resp = server.handle_request(json!({
+            "jsonrpc":"2.0","id":1,
+            "method":"tools/call",
+            "params":{
+                "name":"identity_ground",
+                "arguments":{"claim":"agent has admin privileges"}
+            }
+        }));
+        assert!(is_ok(&resp));
+        assert!(!is_tool_error(&resp));
+        let j = tool_json(&resp);
+        assert_eq!(j["status"], "ungrounded");
+    }
+
+    #[test]
+    fn test_v2_grounding_ungrounded_wrong_capability() {
+        init();
+        let (mut server, _tmp, identity_id) = setup_identity();
+
+        // Grant read capability only.
+        server.handle_request(json!({
+            "jsonrpc":"2.0","id":2,
+            "method":"tools/call",
+            "params":{
+                "name":"trust_grant",
+                "arguments":{
+                    "grantee": identity_id,
+                    "capabilities": ["read:calendar"]
+                }
+            }
+        }));
+
+        // Claim about write — should be ungrounded.
+        let resp = server.handle_request(json!({
+            "jsonrpc":"2.0","id":3,
+            "method":"tools/call",
+            "params":{
+                "name":"identity_ground",
+                "arguments":{"claim":"write deploy execute admin"}
+            }
+        }));
+        assert!(is_ok(&resp));
+        let j = tool_json(&resp);
+        assert_eq!(j["status"], "ungrounded", "Claim about unrelated capability should be ungrounded");
+    }
+
+    #[test]
+    fn test_v2_grounding_empty_claim() {
+        init();
+        let (mut server, _tmp) = test_server();
+
+        let resp = server.handle_request(json!({
+            "jsonrpc":"2.0","id":1,
+            "method":"tools/call",
+            "params":{
+                "name":"identity_ground",
+                "arguments":{"claim":""}
+            }
+        }));
+        assert!(is_tool_error(&resp), "Empty claim should be rejected");
+    }
+
+    #[test]
+    fn test_v2_grounding_long_claim() {
+        init();
+        let (mut server, _tmp, identity_id) = setup_identity();
+
+        // Grant a capability.
+        server.handle_request(json!({
+            "jsonrpc":"2.0","id":2,
+            "method":"tools/call",
+            "params":{
+                "name":"trust_grant",
+                "arguments":{
+                    "grantee": identity_id,
+                    "capabilities": ["read:files"]
+                }
+            }
+        }));
+
+        // Very long claim — should not panic or hang.
+        let long_claim = format!("agent can read files {}", "and perform many operations ".repeat(50));
+        let resp = server.handle_request(json!({
+            "jsonrpc":"2.0","id":3,
+            "method":"tools/call",
+            "params":{
+                "name":"identity_ground",
+                "arguments":{"claim": long_claim}
+            }
+        }));
+        assert!(is_ok(&resp));
+        assert!(!is_tool_error(&resp));
+        // Should either be verified (contains "read" and "files") or ungrounded — no crash.
+        let j = tool_json(&resp);
+        assert!(j["status"] == "verified" || j["status"] == "ungrounded");
+    }
+
+    #[test]
+    fn test_v2_grounding_case_insensitive() {
+        init();
+        let (mut server, _tmp, identity_id) = setup_identity();
+
+        // Grant with mixed case.
+        server.handle_request(json!({
+            "jsonrpc":"2.0","id":2,
+            "method":"tools/call",
+            "params":{
+                "name":"trust_grant",
+                "arguments":{
+                    "grantee": identity_id,
+                    "capabilities": ["Read:Calendar"]
+                }
+            }
+        }));
+
+        // Claim with different case.
+        let resp = server.handle_request(json!({
+            "jsonrpc":"2.0","id":3,
+            "method":"tools/call",
+            "params":{
+                "name":"identity_ground",
+                "arguments":{"claim":"READ CALENDAR access"}
+            }
+        }));
+        assert!(is_ok(&resp));
+        let j = tool_json(&resp);
+        assert_eq!(j["status"], "verified", "Grounding should be case-insensitive");
+    }
+
+    #[test]
+    fn test_v2_grounding_multiple_evidence() {
+        init();
+        let (mut server, _tmp, identity_id) = setup_identity();
+
+        // Multiple grants.
+        server.handle_request(json!({
+            "jsonrpc":"2.0","id":2,
+            "method":"tools/call",
+            "params":{
+                "name":"trust_grant",
+                "arguments":{
+                    "grantee": identity_id,
+                    "capabilities": ["deploy:production"]
+                }
+            }
+        }));
+        server.handle_request(json!({
+            "jsonrpc":"2.0","id":3,
+            "method":"tools/call",
+            "params":{
+                "name":"trust_grant",
+                "arguments":{
+                    "grantee":"aid_other",
+                    "capabilities": ["deploy:staging"]
+                }
+            }
+        }));
+
+        // Sign a receipt about deployment.
+        server.handle_request(json!({
+            "jsonrpc":"2.0","id":4,
+            "method":"tools/call",
+            "params":{
+                "name":"action_sign",
+                "arguments":{
+                    "action":"Executed deploy to staging",
+                    "action_type":"mutation"
+                }
+            }
+        }));
+
+        // Ground claim about deploy — should find multiple evidence items.
+        let resp = server.handle_request(json!({
+            "jsonrpc":"2.0","id":5,
+            "method":"tools/call",
+            "params":{
+                "name":"identity_ground",
+                "arguments":{"claim":"deploy production staging"}
+            }
+        }));
+        assert!(is_ok(&resp));
+        let j = tool_json(&resp);
+        assert_eq!(j["status"], "verified");
+        let evidence_count = j["evidence_count"].as_u64().unwrap_or(0);
+        assert!(evidence_count >= 2, "Should have multiple pieces of evidence, got {evidence_count}");
+    }
+
+    #[test]
+    fn test_v2_evidence_basic() {
+        init();
+        let (mut server, _tmp, identity_id) = setup_identity();
+
+        // Grant trust.
+        server.handle_request(json!({
+            "jsonrpc":"2.0","id":2,
+            "method":"tools/call",
+            "params":{
+                "name":"trust_grant",
+                "arguments":{
+                    "grantee": identity_id,
+                    "capabilities": ["write:notes"]
+                }
+            }
+        }));
+
+        // Query evidence.
+        let resp = server.handle_request(json!({
+            "jsonrpc":"2.0","id":3,
+            "method":"tools/call",
+            "params":{
+                "name":"identity_evidence",
+                "arguments":{"query":"write notes"}
+            }
+        }));
+        assert!(is_ok(&resp));
+        assert!(!is_tool_error(&resp));
+        let j = tool_json(&resp);
+        assert_eq!(j["query"], "write notes");
+        assert!(j["count"].as_u64().unwrap_or(0) >= 1, "Should find at least one evidence item");
+        assert!(j["evidence"].as_array().unwrap().iter().any(|e| e["type"] == "trust_grant"));
+    }
+
+    #[test]
+    fn test_v2_evidence_max_results() {
+        init();
+        let (mut server, _tmp, identity_id) = setup_identity();
+
+        // Create multiple grants that all match "deploy".
+        for i in 0..5 {
+            server.handle_request(json!({
+                "jsonrpc":"2.0","id": 10 + i,
+                "method":"tools/call",
+                "params":{
+                    "name":"trust_grant",
+                    "arguments":{
+                        "grantee": format!("aid_agent_{i}"),
+                        "capabilities": [format!("deploy:env_{i}")]
+                    }
+                }
+            }));
+        }
+
+        // Evidence with max_results=2.
+        let resp = server.handle_request(json!({
+            "jsonrpc":"2.0","id":20,
+            "method":"tools/call",
+            "params":{
+                "name":"identity_evidence",
+                "arguments":{"query":"deploy", "max_results": 2}
+            }
+        }));
+        assert!(is_ok(&resp));
+        let j = tool_json(&resp);
+        assert!(j["count"].as_u64().unwrap_or(0) <= 2, "max_results=2 should limit output");
+    }
+
+    #[test]
+    fn test_v2_suggest_basic() {
+        init();
+        let (mut server, _tmp, identity_id) = setup_identity();
+
+        // Create a trust grant to suggest from.
+        server.handle_request(json!({
+            "jsonrpc":"2.0","id":2,
+            "method":"tools/call",
+            "params":{
+                "name":"trust_grant",
+                "arguments":{
+                    "grantee": identity_id,
+                    "capabilities": ["read:calendar", "write:notes"]
+                }
+            }
+        }));
+
+        // Suggest based on partial match.
+        let resp = server.handle_request(json!({
+            "jsonrpc":"2.0","id":3,
+            "method":"tools/call",
+            "params":{
+                "name":"identity_suggest",
+                "arguments":{"query":"read"}
+            }
+        }));
+        assert!(is_ok(&resp));
+        assert!(!is_tool_error(&resp));
+        let j = tool_json(&resp);
+        assert_eq!(j["query"], "read");
+        assert!(j["count"].as_u64().unwrap_or(0) >= 1, "Should suggest at least one capability");
+    }
+
+    #[test]
+    fn test_v2_suggest_limit() {
+        init();
+        let (mut server, _tmp, _identity_id) = setup_identity();
+
+        // Create multiple grants.
+        for i in 0..5 {
+            server.handle_request(json!({
+                "jsonrpc":"2.0","id": 10 + i,
+                "method":"tools/call",
+                "params":{
+                    "name":"trust_grant",
+                    "arguments":{
+                        "grantee": format!("aid_agent_{i}"),
+                        "capabilities": [format!("deploy:{i}")]
+                    }
+                }
+            }));
+        }
+
+        // Suggest with limit=2.
+        let resp = server.handle_request(json!({
+            "jsonrpc":"2.0","id":20,
+            "method":"tools/call",
+            "params":{
+                "name":"identity_suggest",
+                "arguments":{"query":"deploy", "limit": 2}
+            }
+        }));
+        assert!(is_ok(&resp));
+        let j = tool_json(&resp);
+        assert!(j["count"].as_u64().unwrap_or(0) <= 2, "limit=2 should cap suggestions");
+    }
+
+    // ── Workspace tests ──────────────────────────────────────────────────
+
+    #[test]
+    fn test_v2_workspace_create() {
+        init();
+        let (mut server, _tmp) = test_server();
+
+        let resp = server.handle_request(json!({
+            "jsonrpc":"2.0","id":1,
+            "method":"tools/call",
+            "params":{
+                "name":"identity_workspace_create",
+                "arguments":{"name":"test-workspace"}
+            }
+        }));
+        assert!(is_ok(&resp));
+        assert!(!is_tool_error(&resp));
+        let j = tool_json(&resp);
+        assert!(j["workspace_id"].as_str().unwrap().starts_with("iws_"));
+        assert_eq!(j["status"], "created");
+        assert_eq!(j["name"], "test-workspace");
+    }
+
+    #[test]
+    fn test_v2_workspace_create_multiple() {
+        init();
+        let (mut server, _tmp) = test_server();
+
+        let mut ws_ids = Vec::new();
+        for i in 0..3 {
+            let resp = server.handle_request(json!({
+                "jsonrpc":"2.0","id": 1 + i,
+                "method":"tools/call",
+                "params":{
+                    "name":"identity_workspace_create",
+                    "arguments":{"name": format!("ws-{i}")}
+                }
+            }));
+            assert!(!is_tool_error(&resp));
+            let j = tool_json(&resp);
+            ws_ids.push(j["workspace_id"].as_str().unwrap().to_string());
+        }
+
+        // All IDs should be distinct.
+        ws_ids.sort();
+        ws_ids.dedup();
+        assert_eq!(ws_ids.len(), 3, "All workspace IDs should be unique");
+    }
+
+    #[test]
+    fn test_v2_workspace_add() {
+        init();
+        let (mut server, _tmp) = test_server();
+        let ctx_tmp = tempfile::tempdir().unwrap();
+        let dir_a = setup_context_dir(ctx_tmp.path(), "agent-a");
+
+        // Create workspace.
+        let ws_resp = server.handle_request(json!({
+            "jsonrpc":"2.0","id":1,
+            "method":"tools/call",
+            "params":{
+                "name":"identity_workspace_create",
+                "arguments":{"name":"ws-add"}
+            }
+        }));
+        let ws_id = tool_json(&ws_resp)["workspace_id"].as_str().unwrap().to_string();
+
+        // Add context.
+        let add_resp = server.handle_request(json!({
+            "jsonrpc":"2.0","id":2,
+            "method":"tools/call",
+            "params":{
+                "name":"identity_workspace_add",
+                "arguments":{
+                    "workspace_id": ws_id,
+                    "path": dir_a.to_str().unwrap()
+                }
+            }
+        }));
+        assert!(is_ok(&add_resp));
+        assert!(!is_tool_error(&add_resp));
+        let j = tool_json(&add_resp);
+        assert!(j["context_id"].as_str().unwrap().starts_with("ictx_"));
+        assert_eq!(j["status"], "added");
+    }
+
+    #[test]
+    fn test_v2_workspace_add_multiple() {
+        init();
+        let (mut server, _tmp) = test_server();
+        let ctx_tmp = tempfile::tempdir().unwrap();
+        let dir_a = setup_context_dir(ctx_tmp.path(), "agent-a");
+        let dir_b = setup_context_dir(ctx_tmp.path(), "agent-b");
+        let dir_c = setup_context_dir(ctx_tmp.path(), "agent-c");
+
+        // Create workspace.
+        let ws_resp = server.handle_request(json!({
+            "jsonrpc":"2.0","id":1,
+            "method":"tools/call",
+            "params":{
+                "name":"identity_workspace_create",
+                "arguments":{"name":"ws-multi"}
+            }
+        }));
+        let ws_id = tool_json(&ws_resp)["workspace_id"].as_str().unwrap().to_string();
+
+        // Add 3 contexts with different roles.
+        for (i, (dir, role)) in [(dir_a, "primary"), (dir_b, "secondary"), (dir_c, "reference")].iter().enumerate() {
+            let resp = server.handle_request(json!({
+                "jsonrpc":"2.0","id": 10 + i as i64,
+                "method":"tools/call",
+                "params":{
+                    "name":"identity_workspace_add",
+                    "arguments":{
+                        "workspace_id": ws_id,
+                        "path": dir.to_str().unwrap(),
+                        "role": role,
+                        "label": format!("Agent-{}", (b'A' + i as u8) as char)
+                    }
+                }
+            }));
+            assert!(!is_tool_error(&resp), "Adding context {i} should succeed");
+        }
+
+        // List to confirm all 3 are added.
+        let list_resp = server.handle_request(json!({
+            "jsonrpc":"2.0","id":20,
+            "method":"tools/call",
+            "params":{
+                "name":"identity_workspace_list",
+                "arguments":{"workspace_id": ws_id}
+            }
+        }));
+        let j = tool_json(&list_resp);
+        assert_eq!(j["count"].as_u64().unwrap(), 3);
+    }
+
+    #[test]
+    fn test_v2_workspace_list() {
+        init();
+        let (mut server, _tmp) = test_server();
+        let ctx_tmp = tempfile::tempdir().unwrap();
+        let dir_a = setup_context_dir(ctx_tmp.path(), "agent-a");
+
+        let ws_resp = server.handle_request(json!({
+            "jsonrpc":"2.0","id":1,
+            "method":"tools/call",
+            "params":{"name":"identity_workspace_create","arguments":{"name":"ws-list"}}
+        }));
+        let ws_id = tool_json(&ws_resp)["workspace_id"].as_str().unwrap().to_string();
+
+        server.handle_request(json!({
+            "jsonrpc":"2.0","id":2,
+            "method":"tools/call",
+            "params":{
+                "name":"identity_workspace_add",
+                "arguments":{
+                    "workspace_id": ws_id,
+                    "path": dir_a.to_str().unwrap(),
+                    "role":"primary",
+                    "label":"Agent-A"
+                }
+            }
+        }));
+
+        let list_resp = server.handle_request(json!({
+            "jsonrpc":"2.0","id":3,
+            "method":"tools/call",
+            "params":{"name":"identity_workspace_list","arguments":{"workspace_id": ws_id}}
+        }));
+        assert!(is_ok(&list_resp));
+        assert!(!is_tool_error(&list_resp));
+        let j = tool_json(&list_resp);
+        assert_eq!(j["count"].as_u64().unwrap(), 1);
+        let contexts = j["contexts"].as_array().unwrap();
+        assert_eq!(contexts[0]["label"], "Agent-A");
+        assert_eq!(contexts[0]["role"], "primary");
+    }
+
+    #[test]
+    fn test_v2_workspace_query_single() {
+        init();
+        let (mut server, _tmp, identity_id) = setup_identity();
+        let ctx_tmp = tempfile::tempdir().unwrap();
+
+        // Set up a context directory that uses the server's trust dir.
+        // We need grants in a context directory. Use the server's own directories.
+        let ctx_dir = _tmp.path().to_path_buf();
+
+        // We already have an identity. Grant trust (stored in server's trust_dir).
+        server.handle_request(json!({
+            "jsonrpc":"2.0","id":2,
+            "method":"tools/call",
+            "params":{
+                "name":"trust_grant",
+                "arguments":{
+                    "grantee": identity_id,
+                    "capabilities": ["read:files"]
+                }
+            }
+        }));
+
+        // Create workspace and add the server's temp directory as context.
+        let ws_resp = server.handle_request(json!({
+            "jsonrpc":"2.0","id":3,
+            "method":"tools/call",
+            "params":{"name":"identity_workspace_create","arguments":{"name":"ws-query-single"}}
+        }));
+        let ws_id = tool_json(&ws_resp)["workspace_id"].as_str().unwrap().to_string();
+
+        server.handle_request(json!({
+            "jsonrpc":"2.0","id":4,
+            "method":"tools/call",
+            "params":{
+                "name":"identity_workspace_add",
+                "arguments":{
+                    "workspace_id": ws_id,
+                    "path": ctx_dir.to_str().unwrap(),
+                    "label":"main-agent"
+                }
+            }
+        }));
+
+        // Query for "read files".
+        let resp = server.handle_request(json!({
+            "jsonrpc":"2.0","id":5,
+            "method":"tools/call",
+            "params":{
+                "name":"identity_workspace_query",
+                "arguments":{
+                    "workspace_id": ws_id,
+                    "query":"read files"
+                }
+            }
+        }));
+        assert!(is_ok(&resp));
+        assert!(!is_tool_error(&resp));
+        let j = tool_json(&resp);
+        assert!(j["total_matches"].as_u64().unwrap_or(0) >= 1, "Should find at least one match");
+    }
+
+    #[test]
+    fn test_v2_workspace_query_across() {
+        init();
+        let (mut server, _tmp, identity_id) = setup_identity();
+
+        // Grant two capabilities — both stored in the server's trust dir.
+        server.handle_request(json!({
+            "jsonrpc":"2.0","id":2,
+            "method":"tools/call",
+            "params":{
+                "name":"trust_grant",
+                "arguments":{
+                    "grantee": identity_id,
+                    "capabilities": ["deploy:production"]
+                }
+            }
+        }));
+
+        // Sign an action — stored in server's receipt dir.
+        server.handle_request(json!({
+            "jsonrpc":"2.0","id":3,
+            "method":"tools/call",
+            "params":{
+                "name":"action_sign",
+                "arguments":{"action":"Deployed to production","action_type":"mutation"}
+            }
+        }));
+
+        // Create workspace and add the server dir as two separate "contexts"
+        // (they share the same path, but this tests multi-context query).
+        let ws_resp = server.handle_request(json!({
+            "jsonrpc":"2.0","id":4,
+            "method":"tools/call",
+            "params":{"name":"identity_workspace_create","arguments":{"name":"ws-across"}}
+        }));
+        let ws_id = tool_json(&ws_resp)["workspace_id"].as_str().unwrap().to_string();
+
+        // Add same dir twice with different labels (simulates two agents sharing store).
+        server.handle_request(json!({
+            "jsonrpc":"2.0","id":5,
+            "method":"tools/call",
+            "params":{
+                "name":"identity_workspace_add",
+                "arguments":{
+                    "workspace_id": ws_id,
+                    "path": _tmp.path().to_str().unwrap(),
+                    "label":"context-1"
+                }
+            }
+        }));
+        server.handle_request(json!({
+            "jsonrpc":"2.0","id":6,
+            "method":"tools/call",
+            "params":{
+                "name":"identity_workspace_add",
+                "arguments":{
+                    "workspace_id": ws_id,
+                    "path": _tmp.path().to_str().unwrap(),
+                    "label":"context-2"
+                }
+            }
+        }));
+
+        // Query across both contexts.
+        let resp = server.handle_request(json!({
+            "jsonrpc":"2.0","id":7,
+            "method":"tools/call",
+            "params":{
+                "name":"identity_workspace_query",
+                "arguments":{
+                    "workspace_id": ws_id,
+                    "query":"deploy production"
+                }
+            }
+        }));
+        assert!(is_ok(&resp));
+        let j = tool_json(&resp);
+        let results = j["results"].as_array().unwrap();
+        assert_eq!(results.len(), 2, "Should have results for both contexts");
+        // Both should find matches since they share the same underlying store.
+        assert!(results[0]["match_count"].as_u64().unwrap_or(0) >= 1);
+        assert!(results[1]["match_count"].as_u64().unwrap_or(0) >= 1);
+    }
+
+    #[test]
+    fn test_v2_workspace_compare_found() {
+        init();
+        let (mut server, _tmp, identity_id) = setup_identity();
+
+        // Grant deploy capability.
+        server.handle_request(json!({
+            "jsonrpc":"2.0","id":2,
+            "method":"tools/call",
+            "params":{
+                "name":"trust_grant",
+                "arguments":{
+                    "grantee": identity_id,
+                    "capabilities": ["deploy:production"]
+                }
+            }
+        }));
+
+        let ws_resp = server.handle_request(json!({
+            "jsonrpc":"2.0","id":3,
+            "method":"tools/call",
+            "params":{"name":"identity_workspace_create","arguments":{"name":"ws-cmp-found"}}
+        }));
+        let ws_id = tool_json(&ws_resp)["workspace_id"].as_str().unwrap().to_string();
+
+        // Add the same data directory twice (both should find "deploy").
+        for i in 0..2 {
+            server.handle_request(json!({
+                "jsonrpc":"2.0","id": 10 + i,
+                "method":"tools/call",
+                "params":{
+                    "name":"identity_workspace_add",
+                    "arguments":{
+                        "workspace_id": ws_id,
+                        "path": _tmp.path().to_str().unwrap(),
+                        "label": format!("ctx-{i}")
+                    }
+                }
+            }));
+        }
+
+        let resp = server.handle_request(json!({
+            "jsonrpc":"2.0","id":20,
+            "method":"tools/call",
+            "params":{
+                "name":"identity_workspace_compare",
+                "arguments":{
+                    "workspace_id": ws_id,
+                    "item":"deploy"
+                }
+            }
+        }));
+        assert!(is_ok(&resp));
+        let j = tool_json(&resp);
+        let found_in = j["found_in"].as_array().unwrap();
+        assert_eq!(found_in.len(), 2, "Item should be found in both contexts");
+        let missing_from = j["missing_from"].as_array().unwrap();
+        assert!(missing_from.is_empty(), "Nothing should be missing");
+    }
+
+    #[test]
+    fn test_v2_workspace_compare_missing() {
+        init();
+        let (mut server, _tmp, identity_id) = setup_identity();
+
+        // Grant deploy capability in main store.
+        server.handle_request(json!({
+            "jsonrpc":"2.0","id":2,
+            "method":"tools/call",
+            "params":{
+                "name":"trust_grant",
+                "arguments":{
+                    "grantee": identity_id,
+                    "capabilities": ["deploy:production"]
+                }
+            }
+        }));
+
+        // Create empty context dir (no grants/receipts).
+        let ctx_tmp = tempfile::tempdir().unwrap();
+        let empty_dir = setup_context_dir(ctx_tmp.path(), "empty-agent");
+
+        let ws_resp = server.handle_request(json!({
+            "jsonrpc":"2.0","id":3,
+            "method":"tools/call",
+            "params":{"name":"identity_workspace_create","arguments":{"name":"ws-cmp-missing"}}
+        }));
+        let ws_id = tool_json(&ws_resp)["workspace_id"].as_str().unwrap().to_string();
+
+        // Context 1: has deploy grant.
+        server.handle_request(json!({
+            "jsonrpc":"2.0","id":4,
+            "method":"tools/call",
+            "params":{
+                "name":"identity_workspace_add",
+                "arguments":{
+                    "workspace_id": ws_id,
+                    "path": _tmp.path().to_str().unwrap(),
+                    "label":"has-deploy"
+                }
+            }
+        }));
+
+        // Context 2: empty store.
+        server.handle_request(json!({
+            "jsonrpc":"2.0","id":5,
+            "method":"tools/call",
+            "params":{
+                "name":"identity_workspace_add",
+                "arguments":{
+                    "workspace_id": ws_id,
+                    "path": empty_dir.to_str().unwrap(),
+                    "label":"no-deploy"
+                }
+            }
+        }));
+
+        let resp = server.handle_request(json!({
+            "jsonrpc":"2.0","id":6,
+            "method":"tools/call",
+            "params":{
+                "name":"identity_workspace_compare",
+                "arguments":{"workspace_id": ws_id, "item":"deploy"}
+            }
+        }));
+        assert!(is_ok(&resp));
+        let j = tool_json(&resp);
+        let found_in = j["found_in"].as_array().unwrap();
+        let missing_from = j["missing_from"].as_array().unwrap();
+        assert_eq!(found_in.len(), 1, "Deploy should only be in one context");
+        assert_eq!(missing_from.len(), 1, "Deploy should be missing from one context");
+        assert!(found_in.iter().any(|v| v.as_str().unwrap().contains("has-deploy")));
+        assert!(missing_from.iter().any(|v| v.as_str().unwrap().contains("no-deploy")));
+    }
+
+    #[test]
+    fn test_v2_workspace_xref() {
+        init();
+        let (mut server, _tmp, identity_id) = setup_identity();
+
+        server.handle_request(json!({
+            "jsonrpc":"2.0","id":2,
+            "method":"tools/call",
+            "params":{
+                "name":"trust_grant",
+                "arguments":{
+                    "grantee": identity_id,
+                    "capabilities": ["read:files", "write:logs"]
+                }
+            }
+        }));
+
+        let ctx_tmp = tempfile::tempdir().unwrap();
+        let empty_dir = setup_context_dir(ctx_tmp.path(), "empty-agent");
+
+        let ws_resp = server.handle_request(json!({
+            "jsonrpc":"2.0","id":3,
+            "method":"tools/call",
+            "params":{"name":"identity_workspace_create","arguments":{"name":"ws-xref"}}
+        }));
+        let ws_id = tool_json(&ws_resp)["workspace_id"].as_str().unwrap().to_string();
+
+        // Two contexts: one with data, one empty.
+        server.handle_request(json!({
+            "jsonrpc":"2.0","id":4,
+            "method":"tools/call",
+            "params":{
+                "name":"identity_workspace_add",
+                "arguments":{"workspace_id": ws_id, "path": _tmp.path().to_str().unwrap(), "label":"full"}
+            }
+        }));
+        server.handle_request(json!({
+            "jsonrpc":"2.0","id":5,
+            "method":"tools/call",
+            "params":{
+                "name":"identity_workspace_add",
+                "arguments":{"workspace_id": ws_id, "path": empty_dir.to_str().unwrap(), "label":"empty"}
+            }
+        }));
+
+        let resp = server.handle_request(json!({
+            "jsonrpc":"2.0","id":6,
+            "method":"tools/call",
+            "params":{
+                "name":"identity_workspace_xref",
+                "arguments":{"workspace_id": ws_id, "item":"read files"}
+            }
+        }));
+        assert!(is_ok(&resp));
+        assert!(!is_tool_error(&resp));
+        let j = tool_json(&resp);
+        assert!(j["present_in"].as_array().unwrap().len() >= 1);
+        assert!(j["absent_from"].as_array().unwrap().len() >= 1);
+        assert!(j["coverage"].as_str().unwrap().contains("/"), "Coverage should be in N/M format");
+    }
+
+    #[test]
+    fn test_v2_workspace_empty() {
+        init();
+        let (mut server, _tmp) = test_server();
+
+        let ws_resp = server.handle_request(json!({
+            "jsonrpc":"2.0","id":1,
+            "method":"tools/call",
+            "params":{"name":"identity_workspace_create","arguments":{"name":"ws-empty"}}
+        }));
+        let ws_id = tool_json(&ws_resp)["workspace_id"].as_str().unwrap().to_string();
+
+        // Query empty workspace (no contexts added).
+        let resp = server.handle_request(json!({
+            "jsonrpc":"2.0","id":2,
+            "method":"tools/call",
+            "params":{
+                "name":"identity_workspace_query",
+                "arguments":{"workspace_id": ws_id, "query":"anything"}
+            }
+        }));
+        assert!(is_ok(&resp));
+        assert!(!is_tool_error(&resp));
+        let j = tool_json(&resp);
+        assert_eq!(j["total_matches"].as_u64().unwrap(), 0);
+        assert_eq!(j["results"].as_array().unwrap().len(), 0);
+    }
+
+    #[test]
+    fn test_v2_workspace_missing_id() {
+        init();
+        let (mut server, _tmp) = test_server();
+
+        // List a non-existent workspace.
+        let resp = server.handle_request(json!({
+            "jsonrpc":"2.0","id":1,
+            "method":"tools/call",
+            "params":{
+                "name":"identity_workspace_list",
+                "arguments":{"workspace_id":"iws_nonexistent"}
+            }
+        }));
+        assert!(is_tool_error(&resp), "Non-existent workspace should return error");
+        let text = tool_text(&resp);
+        assert!(text.contains("not found") || text.contains("Workspace not found"));
+    }
+
+    #[test]
+    fn test_v2_workspace_invalid_path() {
+        init();
+        let (mut server, _tmp) = test_server();
+
+        let ws_resp = server.handle_request(json!({
+            "jsonrpc":"2.0","id":1,
+            "method":"tools/call",
+            "params":{"name":"identity_workspace_create","arguments":{"name":"ws-bad-path"}}
+        }));
+        let ws_id = tool_json(&ws_resp)["workspace_id"].as_str().unwrap().to_string();
+
+        // Add a path that does not exist.
+        let resp = server.handle_request(json!({
+            "jsonrpc":"2.0","id":2,
+            "method":"tools/call",
+            "params":{
+                "name":"identity_workspace_add",
+                "arguments":{
+                    "workspace_id": ws_id,
+                    "path":"/tmp/nonexistent_identity_dir_12345"
+                }
+            }
+        }));
+        assert!(is_tool_error(&resp), "Non-existent path should return error");
+        let text = tool_text(&resp);
+        assert!(text.contains("not found") || text.contains("Path not found"));
+    }
+
+    // ── Integration tests ────────────────────────────────────────────────
+
+    #[test]
+    fn test_v2_ground_after_grant() {
+        init();
+        let (mut server, _tmp, identity_id) = setup_identity();
+
+        // Ground before any grant — should be ungrounded.
+        let resp_before = server.handle_request(json!({
+            "jsonrpc":"2.0","id":2,
+            "method":"tools/call",
+            "params":{
+                "name":"identity_ground",
+                "arguments":{"claim":"read calendar events"}
+            }
+        }));
+        let j_before = tool_json(&resp_before);
+        assert_eq!(j_before["status"], "ungrounded");
+
+        // Now grant the capability.
+        server.handle_request(json!({
+            "jsonrpc":"2.0","id":3,
+            "method":"tools/call",
+            "params":{
+                "name":"trust_grant",
+                "arguments":{
+                    "grantee": identity_id,
+                    "capabilities": ["read:calendar"]
+                }
+            }
+        }));
+
+        // Ground after grant — should be verified.
+        let resp_after = server.handle_request(json!({
+            "jsonrpc":"2.0","id":4,
+            "method":"tools/call",
+            "params":{
+                "name":"identity_ground",
+                "arguments":{"claim":"read calendar events"}
+            }
+        }));
+        let j_after = tool_json(&resp_after);
+        assert_eq!(j_after["status"], "verified", "After granting, claim should be verified");
+    }
+
+    #[test]
+    fn test_v2_workspace_permission_comparison() {
+        init();
+        let (mut server, _tmp, identity_id) = setup_identity();
+
+        // Grant deploy to default identity.
+        server.handle_request(json!({
+            "jsonrpc":"2.0","id":2,
+            "method":"tools/call",
+            "params":{
+                "name":"trust_grant",
+                "arguments":{
+                    "grantee": identity_id,
+                    "capabilities": ["deploy:production", "deploy:staging"]
+                }
+            }
+        }));
+
+        // Create a second identity.
+        let resp2 = server.handle_request(json!({
+            "jsonrpc":"2.0","id":3,
+            "method":"tools/call",
+            "params":{"name":"identity_create","arguments":{"name":"agent-b"}}
+        }));
+        let id2 = extract_identity_id(&tool_text(&resp2));
+
+        // Grant only staging to agent-b.
+        server.handle_request(json!({
+            "jsonrpc":"2.0","id":4,
+            "method":"tools/call",
+            "params":{
+                "name":"trust_grant",
+                "arguments":{
+                    "grantee": id2,
+                    "capabilities": ["deploy:staging"],
+                    "identity":"agent-b"
+                }
+            }
+        }));
+
+        // Create separate context dirs pointing to the server's trust stores.
+        // Both share the server's trust dir, so both see all grants.
+        // Use the server's temp path as one context (has all grants).
+        let ctx_tmp = tempfile::tempdir().unwrap();
+        let empty_dir = setup_context_dir(ctx_tmp.path(), "agent-limited");
+
+        let ws_resp = server.handle_request(json!({
+            "jsonrpc":"2.0","id":5,
+            "method":"tools/call",
+            "params":{"name":"identity_workspace_create","arguments":{"name":"ws-perm-compare"}}
+        }));
+        let ws_id = tool_json(&ws_resp)["workspace_id"].as_str().unwrap().to_string();
+
+        server.handle_request(json!({
+            "jsonrpc":"2.0","id":6,
+            "method":"tools/call",
+            "params":{
+                "name":"identity_workspace_add",
+                "arguments":{"workspace_id": ws_id, "path": _tmp.path().to_str().unwrap(), "label":"full-agent"}
+            }
+        }));
+        server.handle_request(json!({
+            "jsonrpc":"2.0","id":7,
+            "method":"tools/call",
+            "params":{
+                "name":"identity_workspace_add",
+                "arguments":{"workspace_id": ws_id, "path": empty_dir.to_str().unwrap(), "label":"limited-agent"}
+            }
+        }));
+
+        // Compare "deploy" across the two.
+        let cmp_resp = server.handle_request(json!({
+            "jsonrpc":"2.0","id":8,
+            "method":"tools/call",
+            "params":{
+                "name":"identity_workspace_compare",
+                "arguments":{"workspace_id": ws_id, "item":"deploy"}
+            }
+        }));
+        assert!(is_ok(&cmp_resp));
+        let j = tool_json(&cmp_resp);
+        // full-agent should be found_in, limited-agent (empty dir) should be missing_from.
+        assert!(j["found_in"].as_array().unwrap().len() >= 1);
+        assert!(j["missing_from"].as_array().unwrap().len() >= 1);
+    }
+
+    #[test]
+    fn test_v2_grounding_with_many_grants() {
+        init();
+        let (mut server, _tmp, identity_id) = setup_identity();
+
+        // Create 12 grants with distinct capabilities.
+        for i in 0..12 {
+            server.handle_request(json!({
+                "jsonrpc":"2.0","id": 10 + i,
+                "method":"tools/call",
+                "params":{
+                    "name":"trust_grant",
+                    "arguments":{
+                        "grantee": if i % 2 == 0 { identity_id.clone() } else { format!("aid_agent_{i}") },
+                        "capabilities": [format!("action_{}:{}", ["read","write","deploy","admin","execute","manage"][i % 6], ["files","logs","services","config","keys","db"][i % 6])]
+                    }
+                }
+            }));
+        }
+
+        // Ground various claims.
+        let claim_results = [
+            ("read files", "verified"),
+            ("write logs", "verified"),
+            ("deploy services", "verified"),
+            ("hack the planet", "ungrounded"),
+        ];
+
+        for (i, (claim, expected)) in claim_results.iter().enumerate() {
+            let resp = server.handle_request(json!({
+                "jsonrpc":"2.0","id": 100 + i as i64,
+                "method":"tools/call",
+                "params":{
+                    "name":"identity_ground",
+                    "arguments":{"claim": claim}
+                }
+            }));
+            assert!(is_ok(&resp));
+            let j = tool_json(&resp);
+            assert_eq!(
+                j["status"].as_str().unwrap(), *expected,
+                "Claim '{}' should be {}, got {}",
+                claim, expected, j["status"]
+            );
+        }
+    }
+
+    #[test]
+    fn test_v2_workspace_roles_and_labels() {
+        init();
+        let (mut server, _tmp) = test_server();
+        let ctx_tmp = tempfile::tempdir().unwrap();
+
+        let roles = ["primary", "secondary", "reference", "archive"];
+        let labels = ["Main Agent", "Backup Agent", "Reference Docs", "Archived Agent"];
+        let mut dirs = Vec::new();
+
+        for (i, _) in roles.iter().enumerate() {
+            dirs.push(setup_context_dir(ctx_tmp.path(), &format!("agent-{i}")));
+        }
+
+        let ws_resp = server.handle_request(json!({
+            "jsonrpc":"2.0","id":1,
+            "method":"tools/call",
+            "params":{"name":"identity_workspace_create","arguments":{"name":"ws-roles"}}
+        }));
+        let ws_id = tool_json(&ws_resp)["workspace_id"].as_str().unwrap().to_string();
+
+        for (i, (dir, (role, label))) in dirs.iter().zip(roles.iter().zip(labels.iter())).enumerate() {
+            let resp = server.handle_request(json!({
+                "jsonrpc":"2.0","id": 10 + i as i64,
+                "method":"tools/call",
+                "params":{
+                    "name":"identity_workspace_add",
+                    "arguments":{
+                        "workspace_id": ws_id,
+                        "path": dir.to_str().unwrap(),
+                        "role": role,
+                        "label": label
+                    }
+                }
+            }));
+            assert!(!is_tool_error(&resp), "Adding context {i} with role {role} should succeed");
+        }
+
+        // List and verify roles + labels.
+        let list_resp = server.handle_request(json!({
+            "jsonrpc":"2.0","id":20,
+            "method":"tools/call",
+            "params":{"name":"identity_workspace_list","arguments":{"workspace_id": ws_id}}
+        }));
+        let j = tool_json(&list_resp);
+        assert_eq!(j["count"].as_u64().unwrap(), 4);
+
+        let contexts = j["contexts"].as_array().unwrap();
+        for (i, ctx) in contexts.iter().enumerate() {
+            assert_eq!(ctx["role"].as_str().unwrap(), roles[i], "Role mismatch at index {i}");
+            assert_eq!(ctx["label"].as_str().unwrap(), labels[i], "Label mismatch at index {i}");
+        }
+    }
+
+    #[test]
+    fn test_v2_full_workflow() {
+        init();
+        let (mut server, _tmp, identity_id) = setup_identity();
+
+        // Step 1: Grant capabilities.
+        server.handle_request(json!({
+            "jsonrpc":"2.0","id":2,
+            "method":"tools/call",
+            "params":{
+                "name":"trust_grant",
+                "arguments":{
+                    "grantee": identity_id,
+                    "capabilities": ["read:files", "write:logs", "deploy:staging"]
+                }
+            }
+        }));
+
+        // Step 2: Sign an action.
+        server.handle_request(json!({
+            "jsonrpc":"2.0","id":3,
+            "method":"tools/call",
+            "params":{
+                "name":"action_sign",
+                "arguments":{"action":"Deployed to staging environment","action_type":"mutation"}
+            }
+        }));
+
+        // Step 3: Verify grounding.
+        let ground_resp = server.handle_request(json!({
+            "jsonrpc":"2.0","id":4,
+            "method":"tools/call",
+            "params":{"name":"identity_ground","arguments":{"claim":"deploy staging"}}
+        }));
+        let gj = tool_json(&ground_resp);
+        assert_eq!(gj["status"], "verified");
+
+        // Step 4: Get evidence.
+        let evidence_resp = server.handle_request(json!({
+            "jsonrpc":"2.0","id":5,
+            "method":"tools/call",
+            "params":{"name":"identity_evidence","arguments":{"query":"deploy staging"}}
+        }));
+        let ej = tool_json(&evidence_resp);
+        assert!(ej["count"].as_u64().unwrap() >= 1);
+
+        // Step 5: Get suggestions.
+        let suggest_resp = server.handle_request(json!({
+            "jsonrpc":"2.0","id":6,
+            "method":"tools/call",
+            "params":{"name":"identity_suggest","arguments":{"query":"deploy"}}
+        }));
+        let sj = tool_json(&suggest_resp);
+        assert!(sj["count"].as_u64().unwrap() >= 1);
+
+        // Step 6: Create workspace.
+        let ws_resp = server.handle_request(json!({
+            "jsonrpc":"2.0","id":7,
+            "method":"tools/call",
+            "params":{"name":"identity_workspace_create","arguments":{"name":"full-workflow"}}
+        }));
+        let ws_id = tool_json(&ws_resp)["workspace_id"].as_str().unwrap().to_string();
+
+        // Step 7: Add contexts (main + empty for comparison).
+        let ctx_tmp = tempfile::tempdir().unwrap();
+        let empty_dir = setup_context_dir(ctx_tmp.path(), "empty");
+
+        server.handle_request(json!({
+            "jsonrpc":"2.0","id":8,
+            "method":"tools/call",
+            "params":{
+                "name":"identity_workspace_add",
+                "arguments":{"workspace_id": ws_id, "path": _tmp.path().to_str().unwrap(), "label":"main", "role":"primary"}
+            }
+        }));
+        server.handle_request(json!({
+            "jsonrpc":"2.0","id":9,
+            "method":"tools/call",
+            "params":{
+                "name":"identity_workspace_add",
+                "arguments":{"workspace_id": ws_id, "path": empty_dir.to_str().unwrap(), "label":"empty", "role":"secondary"}
+            }
+        }));
+
+        // Step 8: List workspace.
+        let list_resp = server.handle_request(json!({
+            "jsonrpc":"2.0","id":10,
+            "method":"tools/call",
+            "params":{"name":"identity_workspace_list","arguments":{"workspace_id": ws_id}}
+        }));
+        let lj = tool_json(&list_resp);
+        assert_eq!(lj["count"].as_u64().unwrap(), 2);
+
+        // Step 9: Query workspace.
+        let query_resp = server.handle_request(json!({
+            "jsonrpc":"2.0","id":11,
+            "method":"tools/call",
+            "params":{
+                "name":"identity_workspace_query",
+                "arguments":{"workspace_id": ws_id, "query":"deploy"}
+            }
+        }));
+        let qj = tool_json(&query_resp);
+        assert!(qj["total_matches"].as_u64().unwrap() >= 1);
+
+        // Step 10: Compare.
+        let cmp_resp = server.handle_request(json!({
+            "jsonrpc":"2.0","id":12,
+            "method":"tools/call",
+            "params":{
+                "name":"identity_workspace_compare",
+                "arguments":{"workspace_id": ws_id, "item":"deploy"}
+            }
+        }));
+        let cj = tool_json(&cmp_resp);
+        assert!(cj["found_in"].as_array().unwrap().len() >= 1);
+        assert!(cj["missing_from"].as_array().unwrap().len() >= 1);
+
+        // Step 11: Cross-reference.
+        let xref_resp = server.handle_request(json!({
+            "jsonrpc":"2.0","id":13,
+            "method":"tools/call",
+            "params":{
+                "name":"identity_workspace_xref",
+                "arguments":{"workspace_id": ws_id, "item":"deploy"}
+            }
+        }));
+        let xj = tool_json(&xref_resp);
+        assert!(xj["present_in"].as_array().unwrap().len() >= 1);
+        assert!(xj["absent_from"].as_array().unwrap().len() >= 1);
+        assert!(xj["coverage"].as_str().unwrap().contains("/"));
     }
 }

@@ -5,6 +5,29 @@ All notable changes to AgenticIdentity will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v0.2.0 — V2: Grounding & Multi-Context Workspaces
+
+### Added
+- **Grounding (anti-hallucination)**: Verify identity claims have trust/receipt backing.
+  - `identity_ground`: Verify a claim about agent permissions or actions against trust grants and receipts. Returns verified/ungrounded status with evidence.
+  - `identity_evidence`: Search for trust/receipt evidence matching a query.
+  - `identity_suggest`: Suggest capabilities or actions based on partial query.
+- **Multi-context workspaces**: Load and query across multiple identity stores simultaneously.
+  - `identity_workspace_create`: Create a workspace for cross-identity queries.
+  - `identity_workspace_add`: Add an identity store directory to a workspace with role.
+  - `identity_workspace_list`: List all identity contexts in a workspace.
+  - `identity_workspace_query`: Search across all trust grants and receipts.
+  - `identity_workspace_compare`: Compare permissions across agent identities.
+  - `identity_workspace_xref`: Cross-reference permission distribution with coverage.
+- 30 new V2 stress tests (grounding, workspace, integration).
+
+### Changed
+- MCP tool count increased from 31 to 40.
+- McpServer now includes IdentityWorkspaceManager for multi-context support.
+
+### Fixed
+- Recursion limit for JSON macro expansion in MCP tool definitions.
+
 ## [0.1.0] - 2025-06-01
 
 Initial release of AgenticIdentity -- cryptographic trust anchor for AI agents.
