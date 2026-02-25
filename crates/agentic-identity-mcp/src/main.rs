@@ -261,7 +261,7 @@ impl McpServer {
                 self.operation_log.clear();
                 self.handle_initialize(id)
             }
-            "initialized" => {
+            "initialized" | "notifications/initialized" => {
                 // Notification — no response needed, return null sentinel
                 Value::Null
             }
@@ -270,6 +270,8 @@ impl McpServer {
             "resources/list" => self.handle_resources_list(id),
             "resources/read" => self.handle_resources_read(id, &params),
             "ping" => ok_result(id, json!({})),
+            // All other notifications — silently ignore (no response)
+            m if m.starts_with("notifications/") => Value::Null,
             _ => rpc_error(id, -32601, format!("method not found: {method}")),
         }
     }
