@@ -1,0 +1,108 @@
+\relax 
+\providecommand\hyper@newdestlabel[2]{}
+\providecommand\HyField@AuxAddToFields[1]{}
+\providecommand\HyField@AuxAddToCoFields[2]{}
+\citation{vaswani2017attention}
+\citation{schick2024toolformer}
+\citation{yao2023react}
+\citation{park2023generative}
+\citation{owolabi2026agenticmemory}
+\citation{owolabi2026agenticcodebase}
+\citation{owolabi2026agenticvision}
+\@writefile{toc}{\contentsline {section}{\numberline {1}Introduction}{1}{section.1}\protected@file@percent }
+\newlabel{sec:intro}{{1}{1}{Introduction}{section.1}{}}
+\citation{x509_rfc5280}
+\citation{did_core_2022}
+\citation{webauthn_2021}
+\citation{spiffe_2024}
+\citation{macaroons2014}
+\citation{bernstein2012ed25519}
+\citation{krawczyk2010hkdf}
+\@writefile{lof}{\contentsline {figure}{\numberline {1}{\ignorespaces Before and after AgenticIdentity. (a)~Today, agents are identified by ephemeral session tokens; actions produce no cryptographic proof. (b)~With AgenticIdentity, each agent has a persistent Ed25519 identity anchor, every action produces a signed receipt linked into a hash chain, and trust relationships are explicit, scoped, and revocable.}}{2}{figure.caption.2}\protected@file@percent }
+\providecommand*\caption@xref[2]{\@setref\relax\@undefined{#1}}
+\newlabel{fig:before_after}{{1}{2}{Before and after AgenticIdentity. (a)~Today, agents are identified by ephemeral session tokens; actions produce no cryptographic proof. (b)~With AgenticIdentity, each agent has a persistent Ed25519 identity anchor, every action produces a signed receipt linked into a hash chain, and trust relationships are explicit, scoped, and revocable}{figure.caption.2}{}}
+\@writefile{toc}{\contentsline {section}{\numberline {2}Background}{2}{section.2}\protected@file@percent }
+\newlabel{sec:background}{{2}{2}{Background}{section.2}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {1}{\ignorespaces Comparison of identity systems. AgenticIdentity is the only system providing all four properties required for AI agent identity.}}{2}{table.caption.3}\protected@file@percent }
+\newlabel{tab:comparison}{{1}{2}{Comparison of identity systems. AgenticIdentity is the only system providing all four properties required for AI agent identity}{table.caption.3}{}}
+\@writefile{toc}{\contentsline {section}{\numberline {3}Architecture}{2}{section.3}\protected@file@percent }
+\newlabel{sec:architecture}{{3}{2}{Architecture}{section.3}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {3.1}Identity Anchor}{2}{subsection.3.1}\protected@file@percent }
+\newlabel{sec:anchor}{{3.1}{2}{Identity Anchor}{subsection.3.1}{}}
+\@writefile{lof}{\contentsline {figure}{\numberline {2}{\ignorespaces Identity anchor key hierarchy. The root Ed25519 key pair generates the permanent identity ID via SHA-256 truncation. Scoped child keys are derived via HKDF-SHA256 with structured context strings for session, capability, device, and revocation purposes.}}{3}{figure.caption.4}\protected@file@percent }
+\newlabel{fig:hierarchy}{{2}{3}{Identity anchor key hierarchy. The root Ed25519 key pair generates the permanent identity ID via SHA-256 truncation. Scoped child keys are derived via HKDF-SHA256 with structured context strings for session, capability, device, and revocation purposes}{figure.caption.4}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {3.2}Action Receipts}{3}{subsection.3.2}\protected@file@percent }
+\newlabel{sec:receipts}{{3.2}{3}{Action Receipts}{subsection.3.2}{}}
+\@writefile{lof}{\contentsline {figure}{\numberline {3}{\ignorespaces Receipt chain structure. Each receipt contains the actor's signature and optionally links to a previous receipt via its ID, creating a tamper-evident audit trail. Witness co-signatures enable multi-party attestation.}}{3}{figure.caption.5}\protected@file@percent }
+\newlabel{fig:chain}{{3}{3}{Receipt chain structure. Each receipt contains the actor's signature and optionally links to a previous receipt via its ID, creating a tamper-evident audit trail. Witness co-signatures enable multi-party attestation}{figure.caption.5}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {3.3}Trust Web}{3}{subsection.3.3}\protected@file@percent }
+\newlabel{sec:trust}{{3.3}{3}{Trust Web}{subsection.3.3}{}}
+\citation{biryukov2016argon2}
+\citation{bernstein2008chacha}
+\citation{mcp_spec_2024}
+\citation{criterion}
+\@writefile{lot}{\contentsline {table}{\numberline {2}{\ignorespaces Cryptographic primitives used in AgenticIdentity.}}{4}{table.caption.7}\protected@file@percent }
+\newlabel{tab:primitives}{{2}{4}{Cryptographic primitives used in AgenticIdentity}{table.caption.7}{}}
+\@writefile{toc}{\contentsline {section}{\numberline {4}Implementation}{4}{section.4}\protected@file@percent }
+\newlabel{sec:implementation}{{4}{4}{Implementation}{section.4}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {3}{\ignorespaces Performance benchmarks (Apple M4 Pro, release mode, Criterion 100 samples). All operations are sub-millisecond.}}{4}{table.caption.8}\protected@file@percent }
+\newlabel{tab:benchmarks}{{3}{4}{Performance benchmarks (Apple M4 Pro, release mode, Criterion 100 samples). All operations are sub-millisecond}{table.caption.8}{}}
+\@writefile{toc}{\contentsline {section}{\numberline {5}Evaluation}{4}{section.5}\protected@file@percent }
+\newlabel{sec:evaluation}{{5}{4}{Evaluation}{section.5}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {5.1}Performance Benchmarks}{4}{subsection.5.1}\protected@file@percent }
+\newlabel{sec:benchmarks}{{5.1}{4}{Performance Benchmarks}{subsection.5.1}{}}
+\citation{dolev1983security}
+\citation{zeroize_crate}
+\@writefile{lof}{\contentsline {figure}{\numberline {4}{\ignorespaces Trust web example showing delegation from a human operator through a hierarchy of agents. The human grants \texttt  {execute:*} to the primary agent with delegation depth~2. The primary delegates scoped subsets to deploy and monitor agents. When the root grant is revoked (dashed red), all downstream trust is automatically invalidated during verification.}}{5}{figure.caption.6}\protected@file@percent }
+\newlabel{fig:trustweb}{{4}{5}{Trust web example showing delegation from a human operator through a hierarchy of agents. The human grants \texttt {execute:*} to the primary agent with delegation depth~2. The primary delegates scoped subsets to deploy and monitor agents. When the root grant is revoked (dashed red), all downstream trust is automatically invalidated during verification}{figure.caption.6}{}}
+\@writefile{lof}{\contentsline {figure}{\numberline {5}{\ignorespaces Benchmark results on log scale. All operations complete in under 50\,\textmu {}s except 10-receipt chain creation (124\,\textmu {}s, not shown). HKDF derivation at $<$1\,\textmu {}s enables on-the-fly key scoping.}}{5}{figure.caption.9}\protected@file@percent }
+\newlabel{fig:benchmarks}{{5}{5}{Benchmark results on log scale. All operations complete in under 50\,\textmu {}s except 10-receipt chain creation (124\,\textmu {}s, not shown). HKDF derivation at $<$1\,\textmu {}s enables on-the-fly key scoping}{figure.caption.9}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {4}{\ignorespaces Throughput derived from benchmark latencies, assuming single-threaded operation.}}{5}{table.caption.10}\protected@file@percent }
+\newlabel{tab:throughput}{{4}{5}{Throughput derived from benchmark latencies, assuming single-threaded operation}{table.caption.10}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {5.2}Security Analysis}{5}{subsection.5.2}\protected@file@percent }
+\newlabel{sec:security}{{5.2}{5}{Security Analysis}{subsection.5.2}{}}
+\citation{spiffe_2024}
+\citation{did_core_2022}
+\citation{dennis1966capabilities}
+\citation{miller2006capability}
+\citation{macaroons2014}
+\citation{ethereum_erc725}
+\citation{hyperledger_indy}
+\citation{owolabi2026agenticmemory}
+\citation{owolabi2026agenticcodebase}
+\citation{owolabi2026agenticvision}
+\@writefile{lot}{\contentsline {table}{\numberline {5}{\ignorespaces Security properties and their cryptographic foundations.}}{6}{table.caption.11}\protected@file@percent }
+\newlabel{tab:security}{{5}{6}{Security properties and their cryptographic foundations}{table.caption.11}{}}
+\@writefile{toc}{\contentsline {section}{\numberline {6}Use Cases}{6}{section.6}\protected@file@percent }
+\newlabel{sec:usecases}{{6}{6}{Use Cases}{section.6}{}}
+\@writefile{toc}{\contentsline {section}{\numberline {7}Related Work}{6}{section.7}\protected@file@percent }
+\newlabel{sec:related}{{7}{6}{Related Work}{section.7}{}}
+\@writefile{toc}{\contentsline {section}{\numberline {8}Conclusion}{6}{section.8}\protected@file@percent }
+\newlabel{sec:conclusion}{{8}{6}{Conclusion}{section.8}{}}
+\bibstyle{plain}
+\bibdata{references}
+\bibcite{mcp_spec_2024}{1}
+\bibcite{bernstein2008chacha}{2}
+\bibcite{bernstein2012ed25519}{3}
+\bibcite{macaroons2014}{4}
+\bibcite{biryukov2016argon2}{5}
+\bibcite{x509_rfc5280}{6}
+\bibcite{dennis1966capabilities}{7}
+\bibcite{dolev1983security}{8}
+\bibcite{ethereum_erc725}{9}
+\bibcite{criterion}{10}
+\bibcite{hyperledger_indy}{11}
+\bibcite{krawczyk2010hkdf}{12}
+\bibcite{miller2006capability}{13}
+\bibcite{owolabi2026agenticcodebase}{14}
+\bibcite{owolabi2026agenticmemory}{15}
+\bibcite{owolabi2026agenticvision}{16}
+\bibcite{park2023generative}{17}
+\bibcite{zeroize_crate}{18}
+\bibcite{schick2024toolformer}{19}
+\bibcite{spiffe_2024}{20}
+\bibcite{vaswani2017attention}{21}
+\bibcite{webauthn_2021}{22}
+\bibcite{did_core_2022}{23}
+\bibcite{yao2023react}{24}
+\gdef \@abspage@last{8}

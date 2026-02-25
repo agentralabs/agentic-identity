@@ -1,0 +1,14 @@
+name: Canonical Sister Guardrails
+
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  check-canonical-sister:
+    name: Verify Canonical Sister Requirements
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run canonical sister checks
+        run: bash scripts/check-canonical-sister.sh

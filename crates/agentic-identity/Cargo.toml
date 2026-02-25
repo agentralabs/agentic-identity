@@ -1,0 +1,91 @@
+[package]
+name = "agentic-identity"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+authors.workspace = true
+description = "Cryptographic identity anchor for AI agents — persistent identity, signed actions, revocable trust"
+readme = "../../README.md"
+keywords = ["ai", "agent", "identity", "cryptography", "trust"]
+categories = ["cryptography", "authentication"]
+
+[dependencies]
+ed25519-dalek.workspace = true
+x25519-dalek.workspace = true
+hkdf.workspace = true
+sha2.workspace = true
+rand.workspace = true
+rand_core.workspace = true
+argon2.workspace = true
+chacha20poly1305.workspace = true
+zeroize.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+bincode.workspace = true
+base64.workspace = true
+hex.workspace = true
+bs58.workspace = true
+chrono.workspace = true
+log.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+criterion.workspace = true
+
+[[bench]]
+name = "crypto_bench"
+path = "../../benches/crypto_bench.rs"
+harness = false
+
+# Stress tests (workspace-level)
+[[test]]
+name = "multi_identity"
+path = "../../tests/stress/multi_identity.rs"
+
+[[test]]
+name = "concurrent_signing"
+path = "../../tests/stress/concurrent_signing.rs"
+
+[[test]]
+name = "trust_chain_depth"
+path = "../../tests/stress/trust_chain_depth.rs"
+
+[[test]]
+name = "receipt_chain_length"
+path = "../../tests/stress/receipt_chain_length.rs"
+
+# Scale stress tests
+[[test]]
+name = "scale_receipts"
+path = "../../tests/stress/scale_receipts.rs"
+
+[[test]]
+name = "scale_continuity"
+path = "../../tests/stress/scale_continuity.rs"
+
+[[test]]
+name = "scale_spawn"
+path = "../../tests/stress/scale_spawn.rs"
+
+# Concurrency stress tests
+[[test]]
+name = "concurrency_trust"
+path = "../../tests/stress/concurrency_trust.rs"
+
+# Edge case tests
+[[test]]
+name = "edge_cases_identity"
+path = "../../tests/stress/edge_cases_identity.rs"
+
+# Resilience tests
+[[test]]
+name = "resilience"
+path = "../../tests/stress/resilience.rs"
+
+# Integration tests (workspace-level)
+[[test]]
+name = "full_workflow"
+path = "../../tests/integration/full_workflow.rs"

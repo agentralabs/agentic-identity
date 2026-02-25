@@ -1,0 +1,48 @@
+name: Python SDK Tests
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "python/**"
+      - "crates/agentic-identity-ffi/**"
+  pull_request:
+    branches: [main]
+    paths:
+      - "python/**"
+      - "crates/agentic-identity-ffi/**"
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  python-sdk-tests:
+    name: Python ${{ matrix.python-version }} / ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        python-version: ["3.10", "3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build FFI crate
+        run: cargo build --release -p agentic-identity-ffi
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install Python SDK (dev)
+        run: pip install -e "python/[dev]"
+
+      - name: Run tests
+        run: pytest python/tests/ -v --tb=short

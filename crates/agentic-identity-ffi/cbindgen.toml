@@ -1,0 +1,26 @@
+# cbindgen configuration for generating C headers from the FFI crate.
+#
+# Generate headers with:
+#   cbindgen --config crates/agentic-identity-ffi/cbindgen.toml \
+#            --crate agentic-identity-ffi \
+#            --output include/agentic_identity.h
+
+language = "C"
+include_guard = "AGENTIC_IDENTITY_H"
+pragma_once = true
+tab_width = 4
+
+[parse]
+parse_deps = false
+
+[export]
+prefix = "AgenticIdentity"
+
+[fn]
+rename_args = "CamelCase"
+
+[struct]
+rename_fields = "CamelCase"
+
+[enum]
+rename_variants = "QualifiedScreamingSnakeCase"

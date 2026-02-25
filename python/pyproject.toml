@@ -1,0 +1,55 @@
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[project]
+name = "agentic-identity"
+version = "0.1.0"
+description = "Cryptographic trust anchor for AI agents"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.10"
+authors = [
+    { name = "Omoshola Owolabi" },
+]
+keywords = ["ai", "agent", "identity", "cryptography", "trust", "signing", "mcp"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Security :: Cryptography",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Typing :: Typed",
+]
+
+# ZERO required dependencies for the core Identity class
+# Only stdlib: ctypes, json, pathlib, enum, dataclasses
+dependencies = []
+
+[project.optional-dependencies]
+# Development
+dev = [
+    "pytest>=8.0",
+    "pytest-cov>=5.0",
+    "mypy>=1.10",
+]
+
+[project.urls]
+Homepage = "https://github.com/agentralabs/agentic-identity"
+Documentation = "https://github.com/agentralabs/agentic-identity/tree/main/docs"
+Repository = "https://github.com/agentralabs/agentic-identity"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/agentic_identity"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.mypy]
+python_version = "3.10"
+strict = true

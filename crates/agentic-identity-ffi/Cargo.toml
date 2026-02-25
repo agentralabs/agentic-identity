@@ -1,0 +1,22 @@
+[package]
+name = "agentic-identity-ffi"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+authors.workspace = true
+description = "C FFI bindings for AgenticIdentity"
+keywords = ["ffi", "ai", "agent", "identity", "bindings"]
+categories = ["api-bindings", "cryptography"]
+
+[lib]
+crate-type = ["cdylib", "staticlib"]
+
+[dependencies]
+agentic-identity = { path = "../agentic-identity", version = "0.1.0" }
+libc = "0.2"
+serde_json = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }

@@ -1,0 +1,14 @@
+name: Install Command Guardrails
+
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  check-install-commands:
+    name: Verify Install Commands
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run install command checks
+        run: bash scripts/check-install-commands.sh

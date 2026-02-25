@@ -1,0 +1,98 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  test:
+    name: Pre-release Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test --all
+      - run: cargo clippy --all -- -D warnings
+      - run: cargo fmt --all -- --check
+
+  build:
+    name: Build ${{ matrix.target }}
+    needs: test
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-latest
+          - target: x86_64-apple-darwin
+            os: macos-latest
+          - target: aarch64-apple-darwin
+            os: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+      - name: Build
+        run: cargo build --release --target ${{ matrix.target }} --package agentic-identity-cli --package agentic-identity-mcp
+        continue-on-error: ${{ contains(matrix.target, 'aarch64-unknown-linux') }}
+      - name: Package
+        run: |
+          mkdir -p dist
+          cp target/${{ matrix.target }}/release/aid dist/ 2>/dev/null || true
+          cp target/${{ matrix.target }}/release/agentic-identity-mcp dist/ 2>/dev/null || true
+          tar -czf aid-${{ matrix.target }}.tar.gz -C dist .
+      - uses: actions/upload-artifact@v4
+        with:
+          name: aid-${{ matrix.target }}
+          path: aid-${{ matrix.target }}.tar.gz
+
+  publish-crates:
+    name: Publish to crates.io
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Publish agentic-identity
+        run: |
+          cargo publish --package agentic-identity --token ${{ secrets.CARGO_REGISTRY_TOKEN }} || {
+            if echo "$?" | grep -q "already"; then
+              echo "Already published — treating as success"
+            else
+              exit 1
+            fi
+          }
+        continue-on-error: true
+      - name: Publish agentic-identity-cli
+        run: cargo publish --package agentic-identity-cli --token ${{ secrets.CARGO_REGISTRY_TOKEN }} || true
+      - name: Publish agentic-identity-mcp
+        run: cargo publish --package agentic-identity-mcp --token ${{ secrets.CARGO_REGISTRY_TOKEN }} || true
+
+  github-release:
+    name: GitHub Release
+    needs: [build]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/**/*.tar.gz
+          generate_release_notes: true
