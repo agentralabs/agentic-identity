@@ -13,7 +13,9 @@
     "integration-guide",
     "file-format",
     "benchmarks",
-    "faq"
+    "faq",
+    "overview",
+    "playbooks-agent-integration"
   ],
   "slug_by_id": {}
 }
