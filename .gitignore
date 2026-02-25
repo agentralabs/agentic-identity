@@ -68,3 +68,7 @@ SPEC-*.md
 .env.local
 *.pem
 *.key
+
+# Internal docs (not for public repo)
+docs/REPO_HYGIENE.md
+docs/internal/
