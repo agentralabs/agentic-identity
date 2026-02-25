@@ -874,7 +874,11 @@ impl McpServer {
         // Auto-log the tool call.
         let summary = {
             let s = args.to_string();
-            if s.len() <= 200 { s } else { format!("{}...", &s[..200]) }
+            if s.len() <= 200 {
+                s
+            } else {
+                format!("{}...", &s[..200])
+            }
         };
         self.operation_log.push(IdentityOperationRecord {
             tool_name,
@@ -3555,7 +3559,10 @@ mod tests {
                 }
             }
         }));
-        assert!(!is_tool_error(&resp), "action_context should succeed: {resp}");
+        assert!(
+            !is_tool_error(&resp),
+            "action_context should succeed: {resp}"
+        );
         let text = tool_text(&resp);
         assert!(text.contains("logged") || text.contains("log_index"));
     }
@@ -3637,10 +3644,7 @@ mod tests {
                     }
                 }
             }));
-            assert!(
-                !is_tool_error(&resp),
-                "significance={level} should succeed"
-            );
+            assert!(!is_tool_error(&resp), "significance={level} should succeed");
         }
     }
 
@@ -3672,8 +3676,14 @@ mod tests {
             "Should have at least 2 operation log entries, got {}",
             server.operation_log.len()
         );
-        assert!(server.operation_log.iter().any(|r| r.tool_name == "identity_create"));
-        assert!(server.operation_log.iter().any(|r| r.tool_name == "action_sign"));
+        assert!(server
+            .operation_log
+            .iter()
+            .any(|r| r.tool_name == "identity_create"));
+        assert!(server
+            .operation_log
+            .iter()
+            .any(|r| r.tool_name == "action_sign"));
     }
 
     #[test]
@@ -3692,11 +3702,18 @@ mod tests {
 
         // action_context stores its own record — verify it exists
         assert!(
-            server.operation_log.iter().any(|r| r.tool_name == "action_context"),
+            server
+                .operation_log
+                .iter()
+                .any(|r| r.tool_name == "action_context"),
             "action_context should store its own log entry"
         );
         // But it should only appear once (not double-logged by auto-capture)
-        let count = server.operation_log.iter().filter(|r| r.tool_name == "action_context").count();
+        let count = server
+            .operation_log
+            .iter()
+            .filter(|r| r.tool_name == "action_context")
+            .count();
         assert_eq!(count, 1, "action_context should appear exactly once");
     }
 
@@ -3717,7 +3734,10 @@ mod tests {
             }
         }));
 
-        assert!(server.session_start_time.is_some(), "Should set session_start_time on initialize");
+        assert!(
+            server.session_start_time.is_some(),
+            "Should set session_start_time on initialize"
+        );
     }
 
     // ── scale tests ─────────────────────────────────────────────────────
@@ -3868,10 +3888,7 @@ mod tests {
         }));
 
         let tools = resp["result"]["tools"].as_array().unwrap();
-        let names: Vec<&str> = tools
-            .iter()
-            .filter_map(|t| t["name"].as_str())
-            .collect();
+        let names: Vec<&str> = tools.iter().filter_map(|t| t["name"].as_str()).collect();
         assert!(
             names.contains(&"action_context"),
             "Tool list must include action_context, found: {:?}",
