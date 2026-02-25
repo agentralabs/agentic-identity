@@ -282,7 +282,7 @@ cargo install agentic-identity-mcp       # MCP server
 **Rust library:**
 ```toml
 [dependencies]
-agentic-identity = "0.2.2"
+agentic-identity = "0.2.3"
 ```
 
 **Python:**
@@ -486,10 +486,10 @@ This is a Cargo workspace monorepo containing the core library, CLI, MCP server,
 agentic-identity/
 ├── Cargo.toml                    # Workspace root
 ├── crates/
-│   ├── agentic-identity/         # Core library (crates.io: agentic-identity v0.2.2)
-│   ├── agentic-identity-cli/     # CLI tool: aid (crates.io: agentic-identity-cli v0.2.2)
-│   ├── agentic-identity-mcp/     # MCP server (crates.io: agentic-identity-mcp v0.2.2)
-│   └── agentic-identity-ffi/     # C FFI bindings (crates.io: agentic-identity-ffi v0.2.2)
+│   ├── agentic-identity/         # Core library (crates.io: agentic-identity v0.2.3)
+│   ├── agentic-identity-cli/     # CLI tool: aid (crates.io: agentic-identity-cli v0.2.3)
+│   ├── agentic-identity-mcp/     # MCP server (crates.io: agentic-identity-mcp v0.2.3)
+│   └── agentic-identity-ffi/     # C FFI bindings (crates.io: agentic-identity-ffi v0.2.3)
 ├── python/                       # Python SDK (PyPI: agentic-identity)
 ├── tests/                        # Integration + stress tests
 ├── benches/                      # Criterion benchmarks
