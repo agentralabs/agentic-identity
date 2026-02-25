@@ -61,7 +61,7 @@ A witness is a second identity that co-signs a receipt. Witness signatures provi
 
 ### How do trust grants work?
 
-A trust grant is a cryptographic statement: "Identity A trusts Identity B to do {capabilities} under {constraints}." It is signed by A's private key and includes B's public key for binding. Verification checks the signature, time validity, revocation status, use count, and capability match.
+A trust grant is a cryptographic statement: "Identity A trusts Identity B to do \{capabilities\} under \{constraints\}." It is signed by A's private key and includes B's public key for binding. Verification checks the signature, time validity, revocation status, use count, and capability match.
 
 ### What are capability URIs?
 
