@@ -266,6 +266,15 @@ cargo run --example sign_action -p agentic-identity         # Sign actions, chai
 cargo run --example trust_delegation -p agentic-identity    # Grant trust, delegate, verify chains
 ```
 
+## Privacy and Security
+
+- All identity data stays local in `.aid` files -- no telemetry, no cloud sync by default.
+- Private keys are encrypted at rest with ChaCha20-Poly1305 + Argon2id passphrase derivation.
+- Key material is zeroized in memory on drop -- intermediate keys are never retained.
+- No custom cryptography: Ed25519, HKDF-SHA256, ChaCha20-Poly1305, Argon2id (all RFC-standard, audited Rust crates).
+- Server mode requires an explicit `AGENTIC_TOKEN` environment variable for bearer auth.
+- Error messages never include private key material.
+
 ## Project Status
 
 **v0.1.0** -- initial release. Core library, CLI, MCP server, FFI bindings, and Python package.
