@@ -2,6 +2,7 @@
 title: Benchmarks
 description: Performance benchmarks for AgenticIdentity cryptographic operations
 order: 5
+status: stable
 ---
 
 # Benchmarks

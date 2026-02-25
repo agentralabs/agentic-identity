@@ -2,6 +2,7 @@
 title: FAQ
 description: Frequently asked questions about AgenticIdentity
 order: 6
+status: stable
 ---
 
 # Frequently Asked Questions

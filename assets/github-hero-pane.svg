@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 400">
+  <rect width="1200" height="400" fill="#1a1a1a"/>
+  <text x="600" y="180" text-anchor="middle" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="48" fill="#e0e0e0" font-weight="700">AgenticIdentity</text>
+  <text x="600" y="230" text-anchor="middle" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="20" fill="#999">Deterministic agent identity for every project</text>
+  <rect x="480" y="270" width="240" height="4" rx="2" fill="#FF6B2B"/>
+  <text x="600" y="320" text-anchor="middle" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="14" fill="#666">agentra.dev</text>
+</svg>

@@ -2,6 +2,7 @@
 title: Integration Guide
 description: Integrate AgenticIdentity with AI agent frameworks, MCP servers, and applications
 order: 3
+status: stable
 ---
 
 # Integration Guide

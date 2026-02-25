@@ -2,6 +2,7 @@
 title: Quickstart
 description: Get started with AgenticIdentity in 5 minutes
 order: 1
+status: stable
 ---
 
 # AgenticIdentity Quickstart

@@ -2,6 +2,7 @@
 title: File Format
 description: Specification of the .aid identity file format
 order: 7
+status: stable
 ---
 
 # .aid File Format Specification

@@ -118,7 +118,7 @@ This document is the single baseline contract for all current and future sisters
   - Before implementing a new sister installer, review `agentic-memory/scripts/install.sh`, `agentic-vision/scripts/install.sh`, and `agentic-codebase/scripts/install.sh` as benchmark baselines.
   - New installer capability must be at least parity with baseline behavior (release-first install, source fallback, profile parity, merge-only MCP config updates, deterministic completion output).
 - Live MCP sister support is mandatory during new-sister delivery.
-  - `agentic-memory-mcp`, `agentic-vision-mcp`, and `acb-mcp` are treated as live ecosystem infrastructure.
+  - `agentic-memory-mcp`, `agentic-vision-mcp`, `agentic-codebase-mcp`, and `agentic-identity-mcp` are treated as live ecosystem infrastructure.
   - New sister planning, implementation, and validation must explicitly use those MCP servers where applicable (design support, integration checks, stress/regression checks).
   - docs baseline listed above
 - New sister README docs must include:
@@ -136,6 +136,21 @@ This document is the single baseline contract for all current and future sisters
   - keep orchestrator UX optional (never a hard runtime dependency)
 - New sister release gate:
   - canonical docs folder and web docs wiring must be validated in CI before publishing.
+
+## 12. Web Docs Grouping Contract
+
+- Public web documentation must keep ecosystem navigation grouped and predictable:
+  - Overview
+  - Workspace
+  - AgenticMemory
+  - AgenticCodebase
+  - AgenticVision
+  - Feedback and Community
+  - System Architecture
+  - Use-Case Playbooks
+- New sister docs must stay under the sister group and must not duplicate workspace-level operations content.
+- Troubleshooting content should live inside workspace operational docs (matrix section), not as a separate top-level page.
+- Command references should stay in command-surface pages; install commands should stay in installation pages.
 
 ## 13. Runtime Isolation and Universal MCP Hardening (Mandatory)
 

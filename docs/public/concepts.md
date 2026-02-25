@@ -2,6 +2,7 @@
 title: Core Concepts
 description: Identity anchors, action receipts, and trust web explained
 order: 2
+status: stable
 ---
 
 # Core Concepts

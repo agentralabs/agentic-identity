@@ -2,6 +2,7 @@
 title: API Reference
 description: Complete API documentation for the agentic-identity Rust library
 order: 4
+status: stable
 ---
 
 # API Reference
