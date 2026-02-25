@@ -8,6 +8,7 @@
   <a href="#mcp-server"><img src="https://img.shields.io/badge/MCP_Server-agentic--identity--mcp-10B981?style=for-the-badge&logo=data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIiBzdHJva2U9IndoaXRlIiBzdHJva2Utd2lkdGg9IjIiPjxwYXRoIGQ9Ik0xMiAydjIwTTIgMTJoMjAiLz48L3N2Zz4=&logoColor=white" alt="MCP Server"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-22C55E?style=for-the-badge" alt="MIT License"></a>
   <a href="paper/paper-i-trust-anchor/agenticidentity-paper.pdf"><img src="https://img.shields.io/badge/Research-Paper_I-8B5CF6?style=for-the-badge" alt="Research Paper I"></a>
+  <a href="docs/api-reference.md"><img src="https://img.shields.io/badge/format-.aid-3B82F6?style=for-the-badge" alt=".aid format"></a>
 </p>
 
 <p align="center">
@@ -535,6 +536,24 @@ Planned CLI shape (not available in current release):
 agentic-identity-mcp serve-http --identity-dir /data/identities --port 8082 --token "<token>"
 agentic-identity-mcp serve-http --multi-tenant --data-dir /data/users --port 8082 --token "<token>"
 ```
+
+---
+
+## The .aid File
+
+Your agent's identity. Continuous. Verifiable.
+
+| | |
+|-|-|
+| Size | ~0.5-1 GB over 20 years |
+| Format | Cryptographic chain |
+| Works with | Any model needing accountability |
+
+## v0.2: Grounding & Workspaces
+
+**Grounding**: Agent cannot claim permission without trust grant evidence.
+
+**Workspaces**: Compare permissions across agents.
 
 ---
 

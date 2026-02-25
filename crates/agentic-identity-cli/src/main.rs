@@ -3,10 +3,12 @@
 //! Provides a command-line interface for managing agentic identities,
 //! signing actions, verifying receipts, and managing trust relationships.
 
-use std::path::PathBuf;
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
 
 use anyhow::{anyhow, Context, Result};
 use clap::{Parser, Subcommand};
+use serde::{Deserialize, Serialize};
 
 use agentic_identity::competence::{self, AttemptOutcome, CompetenceDomain};
 use agentic_identity::continuity::{
@@ -29,6 +31,18 @@ use agentic_identity::{
     TrustId,
 };
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct WorkspaceContext {
+    path: String,
+    role: String,
+    label: Option<String>,
+}
+
+#[derive(Debug, Default, Serialize, Deserialize)]
+struct WorkspaceState {
+    workspaces: HashMap<String, Vec<WorkspaceContext>>,
+}
+
 // ── Directory helpers ─────────────────────────────────────────────────────────
 
 fn agentic_dir() -> PathBuf {
@@ -50,6 +64,144 @@ fn trust_dir() -> PathBuf {
 
 fn identity_path(name: &str) -> PathBuf {
     identity_dir().join(format!("{name}.aid"))
+}
+
+fn workspace_state_path() -> PathBuf {
+    agentic_dir().join("identity").join("workspaces.json")
+}
+
+fn load_workspace_state() -> Result<WorkspaceState> {
+    let path = workspace_state_path();
+    if !path.exists() {
+        return Ok(WorkspaceState::default());
+    }
+    let raw = std::fs::read_to_string(path)?;
+    let state = serde_json::from_str::<WorkspaceState>(&raw)?;
+    Ok(state)
+}
+
+fn save_workspace_state(state: &WorkspaceState) -> Result<()> {
+    let path = workspace_state_path();
+    if let Some(dir) = path.parent() {
+        std::fs::create_dir_all(dir)?;
+    }
+    let raw = serde_json::to_string_pretty(state)?;
+    std::fs::write(path, raw)?;
+    Ok(())
+}
+
+fn score_text(query: &str, text: &str) -> f32 {
+    let query_lower = query.to_lowercase();
+    let text_lower = text.to_lowercase();
+    let words: Vec<&str> = query_lower.split_whitespace().collect();
+    if words.is_empty() {
+        return 0.0;
+    }
+
+    let overlap = words.iter().filter(|w| text_lower.contains(**w)).count() as f32
+        / words.len().max(1) as f32;
+    let contains = if text_lower.contains(&query_lower) {
+        0.4
+    } else {
+        0.0
+    };
+    overlap + contains
+}
+
+fn collect_identity_entries() -> Result<Vec<(String, String, String)>> {
+    let mut entries = Vec::new();
+
+    let receipt_store = ReceiptStore::new(receipt_dir())?;
+    for id in receipt_store.list()? {
+        if let Ok(receipt) = receipt_store.load(&id) {
+            entries.push((
+                "receipt".to_string(),
+                receipt.id.0.clone(),
+                receipt.action.description.clone(),
+            ));
+        }
+    }
+
+    let trust_store = TrustStore::new(trust_dir())?;
+    for id in trust_store.list_granted()?.into_iter().chain(trust_store.list_received()?) {
+        if let Ok(grant) = trust_store.load_grant(&id) {
+            let caps = grant
+                .capabilities
+                .iter()
+                .map(|c| c.uri.clone())
+                .collect::<Vec<_>>()
+                .join(", ");
+            entries.push((
+                "trust".to_string(),
+                grant.id.0.clone(),
+                format!("{} -> {} [{}]", grant.grantor.0, grant.grantee.0, caps),
+            ));
+        }
+    }
+
+    Ok(entries)
+}
+
+fn find_identity_evidence(query: &str, limit: usize) -> Result<Vec<serde_json::Value>> {
+    let mut ranked = Vec::new();
+    for (kind, id, text) in collect_identity_entries()? {
+        let score = score_text(query, &text);
+        if score > 0.0 {
+            ranked.push((score, serde_json::json!({
+                "kind": kind,
+                "id": id,
+                "text": text,
+                "score": score
+            })));
+        }
+    }
+    ranked.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
+    ranked.truncate(limit);
+    Ok(ranked.into_iter().map(|(_, row)| row).collect())
+}
+
+fn collect_files(root: &Path, files: &mut Vec<PathBuf>, max_depth: usize) -> Result<()> {
+    if max_depth == 0 {
+        return Ok(());
+    }
+    if root.is_file() {
+        files.push(root.to_path_buf());
+        return Ok(());
+    }
+    for entry in std::fs::read_dir(root)? {
+        let entry = entry?;
+        let path = entry.path();
+        if path.is_dir() {
+            collect_files(&path, files, max_depth - 1)?;
+        } else {
+            files.push(path);
+        }
+    }
+    Ok(())
+}
+
+fn query_workspace_context(path: &Path, query: &str, limit: usize) -> Result<Vec<String>> {
+    let mut files = Vec::new();
+    collect_files(path, &mut files, 4)?;
+    let mut ranked = Vec::new();
+
+    for file in files {
+        let ext = file.extension().and_then(|e| e.to_str()).unwrap_or("");
+        if !matches!(ext, "aid" | "json" | "txt" | "md") {
+            continue;
+        }
+        let Ok(raw) = std::fs::read_to_string(&file) else {
+            continue;
+        };
+        let score = score_text(query, &raw);
+        if score > 0.0 {
+            ranked.push((score, file.display().to_string()));
+        }
+    }
+
+    ranked.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
+    ranked.truncate(limit);
+    Ok(ranked.into_iter().map(|(_, p)| p).collect())
 }
 
 // ── Passphrase helper ─────────────────────────────────────────────────────────
@@ -149,6 +301,7 @@ enum Commands {
     },
 
     /// Display identity information
+    #[command(alias = "info")]
     Show {
         /// Identity name to show (overrides --identity)
         #[arg(long)]
@@ -207,6 +360,48 @@ enum Commands {
         output: Option<PathBuf>,
     },
 
+    /// Query receipts and trust records by text
+    Query {
+        /// Query text
+        text: String,
+        /// Maximum results
+        #[arg(long, default_value = "20")]
+        limit: usize,
+    },
+
+    /// Verify a claim against identity evidence
+    Ground {
+        /// Claim text
+        claim: String,
+        /// Minimum score threshold
+        #[arg(long, default_value = "0.3")]
+        threshold: f32,
+    },
+
+    /// Return matching evidence for a query
+    Evidence {
+        /// Query text
+        query: String,
+        /// Maximum results
+        #[arg(long, default_value = "20")]
+        limit: usize,
+    },
+
+    /// Suggest similar receipts/grants for a phrase
+    Suggest {
+        /// Query text
+        query: String,
+        /// Maximum suggestions
+        #[arg(long, default_value = "10")]
+        limit: usize,
+    },
+
+    /// Workspace operations across multiple identity paths
+    Workspace {
+        #[command(subcommand)]
+        subcommand: WorkspaceCommands,
+    },
+
     /// Manage receipts
     Receipt {
         #[command(subcommand)]
@@ -236,6 +431,39 @@ enum Commands {
         #[command(subcommand)]
         subcommand: CannotCommands,
     },
+}
+
+#[derive(Subcommand, Debug)]
+enum WorkspaceCommands {
+    /// Create a workspace
+    Create { name: String },
+    /// Add a path to a workspace
+    Add {
+        workspace: String,
+        path: PathBuf,
+        #[arg(long, default_value = "primary")]
+        role: String,
+        #[arg(long)]
+        label: Option<String>,
+    },
+    /// List workspace contexts
+    List { workspace: String },
+    /// Query across workspace contexts
+    Query {
+        workspace: String,
+        query: String,
+        #[arg(long, default_value = "10")]
+        limit: usize,
+    },
+    /// Compare an item across contexts
+    Compare {
+        workspace: String,
+        item: String,
+        #[arg(long, default_value = "10")]
+        limit: usize,
+    },
+    /// Cross-reference an item across contexts
+    Xref { workspace: String, item: String },
 }
 
 #[derive(Subcommand, Debug)]
@@ -582,6 +810,11 @@ fn main() {
             let name = identity.unwrap_or(identity_name);
             cmd_export(&name, output.as_deref(), verbose)
         }
+        Commands::Query { text, limit } => cmd_query_text(&text, limit),
+        Commands::Ground { claim, threshold } => cmd_ground_claim(&claim, threshold),
+        Commands::Evidence { query, limit } => cmd_evidence_query(&query, limit),
+        Commands::Suggest { query, limit } => cmd_suggest_query(&query, limit),
+        Commands::Workspace { subcommand } => cmd_workspace(subcommand),
         Commands::Receipt { subcommand } => match subcommand {
             ReceiptCommands::List {
                 actor,
@@ -1418,6 +1651,230 @@ fn cmd_export(name: &str, output: Option<&std::path::Path>, _verbose: bool) -> R
     }
 
     Ok(())
+}
+
+/// `aid query <text> [--limit N]`
+fn cmd_query_text(text: &str, limit: usize) -> Result<()> {
+    let evidence = find_identity_evidence(text, limit)?;
+    if evidence.is_empty() {
+        println!("No records matched query: {:?}", text);
+        return Ok(());
+    }
+    println!("Query results for {:?}:", text);
+    for row in evidence {
+        let kind = row
+            .get("kind")
+            .and_then(|v| v.as_str())
+            .unwrap_or("unknown");
+        let id = row.get("id").and_then(|v| v.as_str()).unwrap_or("-");
+        let score = row.get("score").and_then(|v| v.as_f64()).unwrap_or_default();
+        let text = row.get("text").and_then(|v| v.as_str()).unwrap_or("");
+        println!("  - [{}] {} score={:.3} {}", kind, id, score, text);
+    }
+    Ok(())
+}
+
+/// `aid evidence <query> [--limit N]`
+fn cmd_evidence_query(query: &str, limit: usize) -> Result<()> {
+    let evidence = find_identity_evidence(query, limit)?;
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&serde_json::json!({
+            "query": query,
+            "count": evidence.len(),
+            "evidence": evidence
+        }))?
+    );
+    Ok(())
+}
+
+/// `aid suggest <query> [--limit N]`
+fn cmd_suggest_query(query: &str, limit: usize) -> Result<()> {
+    let evidence = find_identity_evidence(query, limit)?;
+    let suggestions: Vec<String> = evidence
+        .into_iter()
+        .filter_map(|row| row.get("text").and_then(|v| v.as_str()).map(|s| s.to_string()))
+        .collect();
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&serde_json::json!({
+            "query": query,
+            "suggestions": suggestions
+        }))?
+    );
+    Ok(())
+}
+
+/// `aid ground <claim> [--threshold X]`
+fn cmd_ground_claim(claim: &str, threshold: f32) -> Result<()> {
+    let evidence = find_identity_evidence(claim, 20)?;
+    let strong: Vec<_> = evidence
+        .iter()
+        .filter(|row| {
+            row.get("score").and_then(|v| v.as_f64()).unwrap_or_default() >= threshold as f64
+        })
+        .cloned()
+        .collect();
+    if strong.is_empty() {
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&serde_json::json!({
+                "status": "ungrounded",
+                "claim": claim,
+                "suggestions": evidence.into_iter().take(5).collect::<Vec<_>>()
+            }))?
+        );
+    } else {
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&serde_json::json!({
+                "status": "verified",
+                "claim": claim,
+                "evidence_count": strong.len(),
+                "evidence": strong
+            }))?
+        );
+    }
+    Ok(())
+}
+
+/// `aid workspace ...`
+fn cmd_workspace(subcommand: WorkspaceCommands) -> Result<()> {
+    match subcommand {
+        WorkspaceCommands::Create { name } => {
+            let mut state = load_workspace_state()?;
+            state.workspaces.entry(name.clone()).or_default();
+            save_workspace_state(&state)?;
+            println!("Created workspace '{}'", name);
+            Ok(())
+        }
+        WorkspaceCommands::Add {
+            workspace,
+            path,
+            role,
+            label,
+        } => {
+            let mut state = load_workspace_state()?;
+            let contexts = state.workspaces.entry(workspace.clone()).or_default();
+            let p = path.display().to_string();
+            if !contexts.iter().any(|ctx| ctx.path == p) {
+                contexts.push(WorkspaceContext {
+                    path: p.clone(),
+                    role: role.to_ascii_lowercase(),
+                    label,
+                });
+                save_workspace_state(&state)?;
+            }
+            println!("Added {} to workspace '{}'", path.display(), workspace);
+            Ok(())
+        }
+        WorkspaceCommands::List { workspace } => {
+            let state = load_workspace_state()?;
+            let contexts = state
+                .workspaces
+                .get(&workspace)
+                .ok_or_else(|| anyhow!("workspace '{}' not found", workspace))?;
+            println!("Workspace '{}':", workspace);
+            for ctx in contexts {
+                println!(
+                    "  - {} (role={}, label={})",
+                    ctx.path,
+                    ctx.role,
+                    ctx.label.clone().unwrap_or_else(|| "-".to_string())
+                );
+            }
+            Ok(())
+        }
+        WorkspaceCommands::Query {
+            workspace,
+            query,
+            limit,
+        } => {
+            let state = load_workspace_state()?;
+            let contexts = state
+                .workspaces
+                .get(&workspace)
+                .ok_or_else(|| anyhow!("workspace '{}' not found", workspace))?;
+            let mut result = Vec::new();
+            for ctx in contexts {
+                let matches = query_workspace_context(Path::new(&ctx.path), &query, limit)?;
+                result.push(serde_json::json!({
+                    "context": ctx.label.clone().unwrap_or_else(|| ctx.path.clone()),
+                    "role": ctx.role,
+                    "matches": matches,
+                }));
+            }
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&serde_json::json!({
+                    "workspace": workspace,
+                    "query": query,
+                    "results": result
+                }))?
+            );
+            Ok(())
+        }
+        WorkspaceCommands::Compare {
+            workspace,
+            item,
+            limit,
+        } => {
+            let state = load_workspace_state()?;
+            let contexts = state
+                .workspaces
+                .get(&workspace)
+                .ok_or_else(|| anyhow!("workspace '{}' not found", workspace))?;
+            let mut found_in = Vec::new();
+            let mut missing_from = Vec::new();
+            for ctx in contexts {
+                let matches = query_workspace_context(Path::new(&ctx.path), &item, limit)?;
+                let label = ctx.label.clone().unwrap_or_else(|| ctx.path.clone());
+                if matches.is_empty() {
+                    missing_from.push(label);
+                } else {
+                    found_in.push(label);
+                }
+            }
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&serde_json::json!({
+                    "workspace": workspace,
+                    "item": item,
+                    "found_in": found_in,
+                    "missing_from": missing_from
+                }))?
+            );
+            Ok(())
+        }
+        WorkspaceCommands::Xref { workspace, item } => {
+            let state = load_workspace_state()?;
+            let contexts = state
+                .workspaces
+                .get(&workspace)
+                .ok_or_else(|| anyhow!("workspace '{}' not found", workspace))?;
+            let mut present_in = Vec::new();
+            let mut absent_from = Vec::new();
+            for ctx in contexts {
+                let matches = query_workspace_context(Path::new(&ctx.path), &item, 5)?;
+                let label = ctx.label.clone().unwrap_or_else(|| ctx.path.clone());
+                if matches.is_empty() {
+                    absent_from.push(label);
+                } else {
+                    present_in.push(label);
+                }
+            }
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&serde_json::json!({
+                    "workspace": workspace,
+                    "item": item,
+                    "present_in": present_in,
+                    "absent_from": absent_from
+                }))?
+            );
+            Ok(())
+        }
+    }
 }
 
 /// `aid receipt list [--actor IDENTITY] [--type TYPE] [--limit N]`
