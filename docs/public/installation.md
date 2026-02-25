@@ -36,6 +36,12 @@ cargo install agentic-identity-mcp
 pip install agentic-identity
 ```
 
+## npm
+
+```bash
+npm install @agenticamem/identity
+```
+
 ## Verify Installation
 
 ```bash

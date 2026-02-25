@@ -11,7 +11,7 @@
 </p>
 
 <p align="center">
-  <a href="#quickstart">Quickstart</a> · <a href="#problems-solved">Problems Solved</a> · <a href="#why-agenticidentity">Why</a> · <a href="#mcp-server">MCP Server</a> · <a href="#benchmarks">Benchmarks</a> · <a href="#install">Install</a> · <a href="docs/api-reference.md">API</a> · <a href="docs/faq.md">FAQ</a> · <a href="paper/paper-i-trust-anchor/agenticidentity-paper.pdf">Paper</a>
+  <a href="#quickstart">Quickstart</a> · <a href="#problems-solved">Problems Solved</a> · <a href="#how-it-works">How It Works</a> · <a href="#why-agenticidentity">Why</a> · <a href="#mcp-server">MCP Server</a> · <a href="#benchmarks">Benchmarks</a> · <a href="#install">Install</a> · <a href="docs/api-reference.md">API</a> · <a href="docs/faq.md">FAQ</a> · <a href="paper/paper-i-trust-anchor/agenticidentity-paper.pdf">Paper</a>
 </p>
 
 ---
@@ -127,7 +127,7 @@ Rust core. Ed25519 + HKDF-SHA256. Real numbers from Criterion statistical benchm
 AgenticIdentity is built on three cryptographic primitives: **identity anchors**, **action receipts**, and **trust grants**.
 
 <p align="center">
-  <img src="assets/architecture-agentra.svg" alt="AgenticIdentity architecture with identity anchors, receipts, trust web, and key derivation" width="800">
+  <img src="assets/architecture-agentra.svg" alt="AgenticIdentity architecture with identity anchors, receipts, trust web, and key derivation" width="980">
 </p>
 
 **Identity Anchors** are Ed25519 key pairs:
@@ -247,6 +247,7 @@ curl -fsSL https://agentralabs.tech/install/identity/server | bash
 | GitHub installer (server profile) | `curl -fsSL https://agentralabs.tech/install/identity/server \| bash` | Installs binaries only; server-safe behavior |
 | crates.io paired crates (official) | `cargo install agentic-identity agentic-identity-mcp` | Installs `aid` and `agentic-identity-mcp` |
 | PyPI (SDK) | `pip install agentic-identity` | Python SDK wrapping FFI |
+| npm (wasm) | `npm install @agenticamem/identity` | WASM-based identity SDK for Node.js and browser |
 
 ### Server auth and artifact sync
 

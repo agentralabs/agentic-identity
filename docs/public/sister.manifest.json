@@ -3,9 +3,11 @@
   "name": "AgenticIdentity",
   "include_landing": true,
   "page_ids": [
+    "experience-with-vs-without",
     "quickstart",
     "installation",
     "command-surface",
+    "runtime-install-sync",
     "concepts",
     "api-reference",
     "integration-guide",
