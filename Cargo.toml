@@ -6,6 +6,7 @@ members = [
     "crates/agentic-identity-ffi",
 ]
 resolver = "2"
+exclude = ["npm/wasm"]
 
 [workspace.package]
 version = "0.1.0"

@@ -201,10 +201,30 @@ fn rpc_error(id: Value, code: i64, message: impl Into<String>) -> Value {
 
 // ── MCP Server ────────────────────────────────────────────────────────────────
 
+/// Record of an identity operation with context.
+#[derive(Debug, Clone)]
+struct IdentityOperationRecord {
+    tool_name: String,
+    intent: Option<String>,
+    summary: String,
+    timestamp: u64,
+}
+
 struct McpServer {
     identity_dir: PathBuf,
     receipt_dir: PathBuf,
     trust_dir: PathBuf,
+    /// Log of identity operations with context for this session.
+    operation_log: Vec<IdentityOperationRecord>,
+    /// Timestamp when this session started.
+    session_start_time: Option<u64>,
+}
+
+fn now_secs() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs()
 }
 
 impl McpServer {
@@ -213,11 +233,13 @@ impl McpServer {
             identity_dir: identity_dir(),
             receipt_dir: receipt_dir(),
             trust_dir: trust_dir(),
+            operation_log: Vec::new(),
+            session_start_time: None,
         }
     }
 
     /// Route a JSON-RPC request to the appropriate handler.
-    fn handle_request(&self, request: Value) -> Value {
+    fn handle_request(&mut self, request: Value) -> Value {
         let id = request.get("id").cloned().unwrap_or(Value::Null);
         let method = match request.get("method").and_then(|m| m.as_str()) {
             Some(m) => m.to_string(),
@@ -229,7 +251,11 @@ impl McpServer {
             .unwrap_or(Value::Object(Default::default()));
 
         match method.as_str() {
-            "initialize" => self.handle_initialize(id),
+            "initialize" => {
+                self.session_start_time = Some(now_secs());
+                self.operation_log.clear();
+                self.handle_initialize(id)
+            }
             "initialized" => {
                 // Notification — no response needed, return null sentinel
                 Value::Null
@@ -764,6 +790,33 @@ impl McpServer {
                             },
                             "required": ["capability"]
                         }
+                    },
+                    {
+                        "name": "action_context",
+                        "description": "Log the intent and context behind identity actions. Call this to record WHY you are performing identity operations.",
+                        "inputSchema": {
+                            "type": "object",
+                            "properties": {
+                                "intent": {
+                                    "type": "string",
+                                    "description": "Why you are performing identity actions (e.g., 'establishing trust with new collaborator')"
+                                },
+                                "decision": {
+                                    "type": "string",
+                                    "description": "What was decided or concluded"
+                                },
+                                "significance": {
+                                    "type": "string",
+                                    "enum": ["routine", "important", "critical"],
+                                    "description": "How significant this action is"
+                                },
+                                "topic": {
+                                    "type": "string",
+                                    "description": "Optional topic or category (e.g., 'trust-management', 'spawn-setup')"
+                                }
+                            },
+                            "required": ["intent"]
+                        }
                     }
                 ]
             }),
@@ -772,46 +825,108 @@ impl McpServer {
 
     // ── tools/call ────────────────────────────────────────────────────────────
 
-    fn handle_tools_call(&self, id: Value, params: &Value) -> Value {
+    fn handle_tools_call(&mut self, id: Value, params: &Value) -> Value {
         let tool_name = match params.get("name").and_then(|n| n.as_str()) {
             Some(n) => n.to_string(),
             None => return rpc_error(id, -32602, "missing tool name"),
         };
         let args = params.get("arguments").cloned().unwrap_or(json!({}));
 
-        match tool_name.as_str() {
-            "identity_create" => self.tool_identity_create(id, &args),
-            "identity_show" => self.tool_identity_show(id, &args),
-            "action_sign" => self.tool_action_sign(id, &args),
-            "receipt_verify" => self.tool_receipt_verify(id, &args),
-            "trust_grant" => self.tool_trust_grant(id, &args),
-            "trust_revoke" => self.tool_trust_revoke(id, &args),
-            "trust_verify" => self.tool_trust_verify(id, &args),
-            "trust_list" => self.tool_trust_list(id, &args),
-            "receipt_list" => self.tool_receipt_list(id, &args),
-            "identity_health" => self.tool_identity_health(id, &args),
-            "continuity_record" => self.tool_continuity_record(id, &args),
-            "continuity_anchor" => self.tool_continuity_anchor(id, &args),
-            "continuity_heartbeat" => self.tool_continuity_heartbeat(id, &args),
-            "continuity_status" => self.tool_continuity_status(id, &args),
-            "continuity_gaps" => self.tool_continuity_gaps(id, &args),
-            "spawn_create" => self.tool_spawn_create(id, &args),
-            "spawn_terminate" => self.tool_spawn_terminate(id, &args),
-            "spawn_list" => self.tool_spawn_list(id, &args),
-            "spawn_lineage" => self.tool_spawn_lineage(id, &args),
-            "spawn_authority" => self.tool_spawn_authority(id, &args),
-            "competence_record" => self.tool_competence_record(id, &args),
-            "competence_show" => self.tool_competence_show(id, &args),
-            "competence_prove" => self.tool_competence_prove(id, &args),
-            "competence_verify" => self.tool_competence_verify(id, &args),
-            "competence_list" => self.tool_competence_list(id, &args),
-            "negative_prove" => self.tool_negative_prove(id, &args),
-            "negative_verify" => self.tool_negative_verify(id, &args),
-            "negative_declare" => self.tool_negative_declare(id, &args),
-            "negative_list" => self.tool_negative_list(id, &args),
-            "negative_check" => self.tool_negative_check(id, &args),
-            _ => rpc_error(id, -32602, format!("unknown tool: {tool_name}")),
+        // Handle action_context separately (it mutates operation_log directly).
+        if tool_name == "action_context" {
+            return self.tool_action_context(id, &args);
         }
+
+        let result = match tool_name.as_str() {
+            "identity_create" => self.tool_identity_create(id.clone(), &args),
+            "identity_show" => self.tool_identity_show(id.clone(), &args),
+            "action_sign" => self.tool_action_sign(id.clone(), &args),
+            "receipt_verify" => self.tool_receipt_verify(id.clone(), &args),
+            "trust_grant" => self.tool_trust_grant(id.clone(), &args),
+            "trust_revoke" => self.tool_trust_revoke(id.clone(), &args),
+            "trust_verify" => self.tool_trust_verify(id.clone(), &args),
+            "trust_list" => self.tool_trust_list(id.clone(), &args),
+            "receipt_list" => self.tool_receipt_list(id.clone(), &args),
+            "identity_health" => self.tool_identity_health(id.clone(), &args),
+            "continuity_record" => self.tool_continuity_record(id.clone(), &args),
+            "continuity_anchor" => self.tool_continuity_anchor(id.clone(), &args),
+            "continuity_heartbeat" => self.tool_continuity_heartbeat(id.clone(), &args),
+            "continuity_status" => self.tool_continuity_status(id.clone(), &args),
+            "continuity_gaps" => self.tool_continuity_gaps(id.clone(), &args),
+            "spawn_create" => self.tool_spawn_create(id.clone(), &args),
+            "spawn_terminate" => self.tool_spawn_terminate(id.clone(), &args),
+            "spawn_list" => self.tool_spawn_list(id.clone(), &args),
+            "spawn_lineage" => self.tool_spawn_lineage(id.clone(), &args),
+            "spawn_authority" => self.tool_spawn_authority(id.clone(), &args),
+            "competence_record" => self.tool_competence_record(id.clone(), &args),
+            "competence_show" => self.tool_competence_show(id.clone(), &args),
+            "competence_prove" => self.tool_competence_prove(id.clone(), &args),
+            "competence_verify" => self.tool_competence_verify(id.clone(), &args),
+            "competence_list" => self.tool_competence_list(id.clone(), &args),
+            "negative_prove" => self.tool_negative_prove(id.clone(), &args),
+            "negative_verify" => self.tool_negative_verify(id.clone(), &args),
+            "negative_declare" => self.tool_negative_declare(id.clone(), &args),
+            "negative_list" => self.tool_negative_list(id.clone(), &args),
+            "negative_check" => self.tool_negative_check(id.clone(), &args),
+            _ => return rpc_error(id, -32602, format!("unknown tool: {tool_name}")),
+        };
+
+        // Auto-log the tool call.
+        let summary = {
+            let s = args.to_string();
+            if s.len() <= 200 { s } else { format!("{}...", &s[..200]) }
+        };
+        self.operation_log.push(IdentityOperationRecord {
+            tool_name,
+            intent: None,
+            summary,
+            timestamp: now_secs(),
+        });
+
+        result
+    }
+
+    // ── Tool: action_context ───────────────────────────────────────────────────
+
+    fn tool_action_context(&mut self, id: Value, args: &Value) -> Value {
+        let intent = match args.get("intent").and_then(|v| v.as_str()) {
+            Some(i) if !i.trim().is_empty() => i.to_string(),
+            _ => return tool_error(id, "'intent' is required and must not be empty"),
+        };
+
+        let decision = args.get("decision").and_then(|v| v.as_str());
+        let significance = args.get("significance").and_then(|v| v.as_str());
+        let topic = args.get("topic").and_then(|v| v.as_str());
+
+        let mut summary_parts = vec![format!("intent: {intent}")];
+        if let Some(d) = decision {
+            summary_parts.push(format!("decision: {d}"));
+        }
+        if let Some(s) = significance {
+            summary_parts.push(format!("significance: {s}"));
+        }
+        if let Some(t) = topic {
+            summary_parts.push(format!("topic: {t}"));
+        }
+
+        let record = IdentityOperationRecord {
+            tool_name: "action_context".to_string(),
+            intent: Some(intent),
+            summary: summary_parts.join(" | "),
+            timestamp: now_secs(),
+        };
+
+        let index = self.operation_log.len();
+        self.operation_log.push(record);
+
+        tool_ok(
+            id,
+            serde_json::to_string_pretty(&json!({
+                "log_index": index,
+                "message": "Action context logged"
+            }))
+            .unwrap_or_default(),
+        )
     }
 
     // ── Tool: identity_create ─────────────────────────────────────────────────
@@ -2583,7 +2698,7 @@ fn main() {
         .with_max_level(tracing::Level::WARN)
         .init();
 
-    let server = McpServer::new();
+    let mut server = McpServer::new();
     let stdin = io::stdin();
     let stdout = io::stdout();
 
@@ -2660,6 +2775,8 @@ mod tests {
             identity_dir: tmp.path().join("identity"),
             receipt_dir: tmp.path().join("receipts"),
             trust_dir: tmp.path().join("trust"),
+            operation_log: Vec::new(),
+            session_start_time: None,
         };
         (server, tmp)
     }
@@ -2693,7 +2810,7 @@ mod tests {
     #[test]
     fn test_initialize() {
         init();
-        let (server, _tmp) = test_server();
+        let (mut server, _tmp) = test_server();
         let req = json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{}});
         let resp = server.handle_request(req);
         assert!(is_ok(&resp));
@@ -2709,7 +2826,7 @@ mod tests {
     #[test]
     fn test_ping() {
         init();
-        let (server, _tmp) = test_server();
+        let (mut server, _tmp) = test_server();
         let req = json!({"jsonrpc":"2.0","id":2,"method":"ping","params":{}});
         let resp = server.handle_request(req);
         assert!(is_ok(&resp));
@@ -2720,7 +2837,7 @@ mod tests {
     #[test]
     fn test_tools_list() {
         init();
-        let (server, _tmp) = test_server();
+        let (mut server, _tmp) = test_server();
         let req = json!({"jsonrpc":"2.0","id":3,"method":"tools/list","params":{}});
         let resp = server.handle_request(req);
         assert!(is_ok(&resp));
@@ -2760,7 +2877,9 @@ mod tests {
         assert!(names.contains(&"negative_declare"));
         assert!(names.contains(&"negative_list"));
         assert!(names.contains(&"negative_check"));
-        assert_eq!(tools.len(), 30);
+        assert!(names.contains(&"action_context"));
+        // 30 original tools + 1 action_context = 31
+        assert_eq!(tools.len(), 31);
     }
 
     // ── resources/list ────────────────────────────────────────────────────────
@@ -2768,7 +2887,7 @@ mod tests {
     #[test]
     fn test_resources_list() {
         init();
-        let (server, _tmp) = test_server();
+        let (mut server, _tmp) = test_server();
         let req = json!({"jsonrpc":"2.0","id":4,"method":"resources/list","params":{}});
         let resp = server.handle_request(req);
         assert!(is_ok(&resp));
@@ -2784,7 +2903,7 @@ mod tests {
     #[test]
     fn test_identity_create_default() {
         init();
-        let (server, _tmp) = test_server();
+        let (mut server, _tmp) = test_server();
         let req = json!({
             "jsonrpc":"2.0","id":5,
             "method":"tools/call",
@@ -2801,7 +2920,7 @@ mod tests {
     #[test]
     fn test_identity_create_named() {
         init();
-        let (server, _tmp) = test_server();
+        let (mut server, _tmp) = test_server();
         let req = json!({
             "jsonrpc":"2.0","id":6,
             "method":"tools/call",
@@ -2817,7 +2936,7 @@ mod tests {
     #[test]
     fn test_identity_create_duplicate_fails() {
         init();
-        let (server, _tmp) = test_server();
+        let (mut server, _tmp) = test_server();
         let req = json!({
             "jsonrpc":"2.0","id":7,
             "method":"tools/call",
@@ -2844,7 +2963,7 @@ mod tests {
     #[test]
     fn test_identity_show_after_create() {
         init();
-        let (server, _tmp) = test_server();
+        let (mut server, _tmp) = test_server();
 
         // Create first.
         let create_req = json!({
@@ -2871,7 +2990,7 @@ mod tests {
     #[test]
     fn test_identity_show_not_found() {
         init();
-        let (server, _tmp) = test_server();
+        let (mut server, _tmp) = test_server();
         let req = json!({
             "jsonrpc":"2.0","id":11,
             "method":"tools/call",
@@ -2888,7 +3007,7 @@ mod tests {
     #[test]
     fn test_action_sign() {
         init();
-        let (server, _tmp) = test_server();
+        let (mut server, _tmp) = test_server();
 
         // Create identity first.
         let _ = server.handle_request(json!({
@@ -2919,7 +3038,7 @@ mod tests {
     #[test]
     fn test_action_sign_with_chain() {
         init();
-        let (server, _tmp) = test_server();
+        let (mut server, _tmp) = test_server();
 
         // Create identity.
         let _ = server.handle_request(json!({
@@ -2967,7 +3086,7 @@ mod tests {
     #[test]
     fn test_action_sign_no_action_fails() {
         init();
-        let (server, _tmp) = test_server();
+        let (mut server, _tmp) = test_server();
         let req = json!({
             "jsonrpc":"2.0","id":17,
             "method":"tools/call",
@@ -2984,7 +3103,7 @@ mod tests {
     #[test]
     fn test_receipt_verify_valid() {
         init();
-        let (server, _tmp) = test_server();
+        let (mut server, _tmp) = test_server();
 
         // Create identity and sign action.
         let _ = server.handle_request(json!({
@@ -3027,7 +3146,7 @@ mod tests {
     #[test]
     fn test_receipt_verify_not_found() {
         init();
-        let (server, _tmp) = test_server();
+        let (mut server, _tmp) = test_server();
         let req = json!({
             "jsonrpc":"2.0","id":21,
             "method":"tools/call",
@@ -3047,7 +3166,7 @@ mod tests {
     #[test]
     fn test_trust_grant_and_verify() {
         init();
-        let (server, _tmp) = test_server();
+        let (mut server, _tmp) = test_server();
 
         // Create identity.
         let _ = server.handle_request(json!({
@@ -3101,7 +3220,7 @@ mod tests {
     #[test]
     fn test_trust_revoke() {
         init();
-        let (server, _tmp) = test_server();
+        let (mut server, _tmp) = test_server();
 
         // Create identity.
         let _ = server.handle_request(json!({
@@ -3161,7 +3280,7 @@ mod tests {
     #[test]
     fn test_trust_list() {
         init();
-        let (server, _tmp) = test_server();
+        let (mut server, _tmp) = test_server();
 
         // Create identity.
         let _ = server.handle_request(json!({
@@ -3207,7 +3326,7 @@ mod tests {
     #[test]
     fn test_receipt_list() {
         init();
-        let (server, _tmp) = test_server();
+        let (mut server, _tmp) = test_server();
 
         // Create identity.
         let _ = server.handle_request(json!({
@@ -3247,7 +3366,7 @@ mod tests {
     #[test]
     fn test_identity_health_before_setup() {
         init();
-        let (server, _tmp) = test_server();
+        let (mut server, _tmp) = test_server();
         let req = json!({
             "jsonrpc":"2.0","id":38,
             "method":"tools/call",
@@ -3262,7 +3381,7 @@ mod tests {
     #[test]
     fn test_identity_health_after_setup() {
         init();
-        let (server, _tmp) = test_server();
+        let (mut server, _tmp) = test_server();
 
         // Create default identity.
         let _ = server.handle_request(json!({
@@ -3287,7 +3406,7 @@ mod tests {
     #[test]
     fn test_unknown_method() {
         init();
-        let (server, _tmp) = test_server();
+        let (mut server, _tmp) = test_server();
         let req = json!({"jsonrpc":"2.0","id":41,"method":"no_such_method","params":{}});
         let resp = server.handle_request(req);
         assert!(resp.get("error").is_some());
@@ -3299,7 +3418,7 @@ mod tests {
     #[test]
     fn test_initialized_notification_returns_null() {
         init();
-        let (server, _tmp) = test_server();
+        let (mut server, _tmp) = test_server();
         let req = json!({"jsonrpc":"2.0","method":"initialized","params":{}});
         let resp = server.handle_request(req);
         assert!(resp.is_null());
@@ -3310,7 +3429,7 @@ mod tests {
     #[test]
     fn test_resource_identity_read() {
         init();
-        let (server, _tmp) = test_server();
+        let (mut server, _tmp) = test_server();
 
         // Create identity first.
         let _ = server.handle_request(json!({
@@ -3334,7 +3453,7 @@ mod tests {
     #[test]
     fn test_resource_receipts_recent() {
         init();
-        let (server, _tmp) = test_server();
+        let (mut server, _tmp) = test_server();
 
         // Create identity and a receipt.
         let _ = server.handle_request(json!({
@@ -3410,5 +3529,371 @@ mod tests {
         assert_eq!(epoch_to_datetime(0), "1970-01-01 00:00:00 UTC");
         // 2024-01-01 00:00:00 UTC = 1704067200
         assert_eq!(epoch_to_datetime(1704067200), "2024-01-01 00:00:00 UTC");
+    }
+
+    // ════════════════════════════════════════════════════════════════════════
+    // Phase 0 Stress Tests: Context Capture
+    // ════════════════════════════════════════════════════════════════════════
+
+    // ── action_context tool ──────────────────────────────────────────────
+
+    #[test]
+    fn test_action_context_basic() {
+        init();
+        let (mut server, _tmp) = test_server();
+
+        let resp = server.handle_request(json!({
+            "jsonrpc":"2.0","id":100,
+            "method":"tools/call",
+            "params":{
+                "name":"action_context",
+                "arguments":{
+                    "intent": "Establishing trust with new collaborator",
+                    "decision": "Grant read-only access",
+                    "significance": "important",
+                    "topic": "trust-management"
+                }
+            }
+        }));
+        assert!(!is_tool_error(&resp), "action_context should succeed: {resp}");
+        let text = tool_text(&resp);
+        assert!(text.contains("logged") || text.contains("log_index"));
+    }
+
+    #[test]
+    fn test_action_context_intent_only() {
+        init();
+        let (mut server, _tmp) = test_server();
+
+        let resp = server.handle_request(json!({
+            "jsonrpc":"2.0","id":101,
+            "method":"tools/call",
+            "params":{
+                "name":"action_context",
+                "arguments":{
+                    "intent": "Reviewing identity health status"
+                }
+            }
+        }));
+        assert!(!is_tool_error(&resp));
+    }
+
+    #[test]
+    fn test_action_context_empty_intent_fails() {
+        init();
+        let (mut server, _tmp) = test_server();
+
+        let resp = server.handle_request(json!({
+            "jsonrpc":"2.0","id":102,
+            "method":"tools/call",
+            "params":{
+                "name":"action_context",
+                "arguments":{
+                    "intent": ""
+                }
+            }
+        }));
+        // Should be an error
+        assert!(
+            resp.get("error").is_some() || is_tool_error(&resp),
+            "Empty intent should be rejected: {resp}"
+        );
+    }
+
+    #[test]
+    fn test_action_context_missing_intent_fails() {
+        init();
+        let (mut server, _tmp) = test_server();
+
+        let resp = server.handle_request(json!({
+            "jsonrpc":"2.0","id":103,
+            "method":"tools/call",
+            "params":{
+                "name":"action_context",
+                "arguments":{
+                    "decision": "Some decision without intent"
+                }
+            }
+        }));
+        assert!(
+            resp.get("error").is_some() || is_tool_error(&resp),
+            "Missing intent should be rejected: {resp}"
+        );
+    }
+
+    #[test]
+    fn test_action_context_all_significance_levels() {
+        init();
+        for level in &["routine", "important", "critical"] {
+            let (mut server, _tmp) = test_server();
+            let resp = server.handle_request(json!({
+                "jsonrpc":"2.0","id":104,
+                "method":"tools/call",
+                "params":{
+                    "name":"action_context",
+                    "arguments":{
+                        "intent": format!("Test {level} significance"),
+                        "significance": level
+                    }
+                }
+            }));
+            assert!(
+                !is_tool_error(&resp),
+                "significance={level} should succeed"
+            );
+        }
+    }
+
+    // ── operation log auto-capture ───────────────────────────────────────
+
+    #[test]
+    fn test_operation_log_captures_tool_calls() {
+        init();
+        let (mut server, _tmp) = test_server();
+
+        // Create identity and sign an action
+        server.handle_request(json!({
+            "jsonrpc":"2.0","id":110,
+            "method":"tools/call",
+            "params":{"name":"identity_create","arguments":{}}
+        }));
+        server.handle_request(json!({
+            "jsonrpc":"2.0","id":111,
+            "method":"tools/call",
+            "params":{
+                "name":"action_sign",
+                "arguments":{"action":"Test action","action_type":"observation"}
+            }
+        }));
+
+        // Operation log should have entries
+        assert!(
+            server.operation_log.len() >= 2,
+            "Should have at least 2 operation log entries, got {}",
+            server.operation_log.len()
+        );
+        assert!(server.operation_log.iter().any(|r| r.tool_name == "identity_create"));
+        assert!(server.operation_log.iter().any(|r| r.tool_name == "action_sign"));
+    }
+
+    #[test]
+    fn test_action_context_stores_in_operation_log() {
+        init();
+        let (mut server, _tmp) = test_server();
+
+        server.handle_request(json!({
+            "jsonrpc":"2.0","id":112,
+            "method":"tools/call",
+            "params":{
+                "name":"action_context",
+                "arguments":{"intent":"Test intent"}
+            }
+        }));
+
+        // action_context stores its own record — verify it exists
+        assert!(
+            server.operation_log.iter().any(|r| r.tool_name == "action_context"),
+            "action_context should store its own log entry"
+        );
+        // But it should only appear once (not double-logged by auto-capture)
+        let count = server.operation_log.iter().filter(|r| r.tool_name == "action_context").count();
+        assert_eq!(count, 1, "action_context should appear exactly once");
+    }
+
+    #[test]
+    fn test_session_tracking_on_initialize() {
+        init();
+        let (mut server, _tmp) = test_server();
+
+        assert!(server.session_start_time.is_none());
+
+        server.handle_request(json!({
+            "jsonrpc":"2.0","id":113,
+            "method":"initialize",
+            "params":{
+                "protocolVersion":"2024-11-05",
+                "capabilities":{},
+                "clientInfo":{"name":"stress-test","version":"1.0"}
+            }
+        }));
+
+        assert!(server.session_start_time.is_some(), "Should set session_start_time on initialize");
+    }
+
+    // ── scale tests ─────────────────────────────────────────────────────
+
+    #[test]
+    fn test_scale_100_action_contexts() {
+        init();
+        let (mut server, _tmp) = test_server();
+
+        let start = std::time::Instant::now();
+        for i in 0..100 {
+            server.handle_request(json!({
+                "jsonrpc":"2.0","id": 200 + i,
+                "method":"tools/call",
+                "params":{
+                    "name":"action_context",
+                    "arguments":{
+                        "intent": format!("Scale test intent {i}"),
+                        "decision": format!("Decision {i}"),
+                        "significance": if i % 3 == 0 { "routine" } else if i % 3 == 1 { "important" } else { "critical" },
+                        "topic": format!("topic-{}", i % 10)
+                    }
+                }
+            }));
+        }
+
+        let elapsed = start.elapsed();
+        assert!(
+            elapsed.as_secs() < 10,
+            "100 action_context calls took {:?} — too slow",
+            elapsed
+        );
+    }
+
+    #[test]
+    fn test_scale_10_identity_operations() {
+        init();
+        let (mut server, _tmp) = test_server();
+
+        // Create identity once
+        server.handle_request(json!({
+            "jsonrpc":"2.0","id":300,
+            "method":"tools/call",
+            "params":{"name":"identity_create","arguments":{}}
+        }));
+
+        let start = std::time::Instant::now();
+        for i in 0..10 {
+            server.handle_request(json!({
+                "jsonrpc":"2.0","id": 301 + i,
+                "method":"tools/call",
+                "params":{
+                    "name":"action_sign",
+                    "arguments":{
+                        "action": format!("Scale action {i}"),
+                        "action_type":"observation"
+                    }
+                }
+            }));
+        }
+
+        let elapsed = start.elapsed();
+        assert!(
+            elapsed.as_secs() < 60,
+            "10 action_sign calls took {:?} — too slow",
+            elapsed
+        );
+
+        // Operation log should have 11 entries (1 create + 10 signs)
+        assert!(
+            server.operation_log.len() >= 11,
+            "Expected at least 11 log entries, got {}",
+            server.operation_log.len()
+        );
+    }
+
+    // ── edge cases ──────────────────────────────────────────────────────
+
+    #[test]
+    fn test_action_context_unicode() {
+        init();
+        let (mut server, _tmp) = test_server();
+
+        let resp = server.handle_request(json!({
+            "jsonrpc":"2.0","id":400,
+            "method":"tools/call",
+            "params":{
+                "name":"action_context",
+                "arguments":{
+                    "intent": "建立与新合作者的信任",
+                    "decision": "付与読み取り専用アクセス",
+                    "topic": "국제화-테스트"
+                }
+            }
+        }));
+        assert!(!is_tool_error(&resp));
+    }
+
+    #[test]
+    fn test_action_context_special_chars() {
+        init();
+        let (mut server, _tmp) = test_server();
+
+        let resp = server.handle_request(json!({
+            "jsonrpc":"2.0","id":401,
+            "method":"tools/call",
+            "params":{
+                "name":"action_context",
+                "arguments":{
+                    "intent": "Check \"quotes\" and 'apostrophes' & <angle> brackets",
+                    "decision": "Found: \\ backslash, \t tab"
+                }
+            }
+        }));
+        assert!(!is_tool_error(&resp));
+    }
+
+    #[test]
+    fn test_action_context_long_intent() {
+        init();
+        let (mut server, _tmp) = test_server();
+
+        let long_intent = "Y".repeat(10_000);
+        let resp = server.handle_request(json!({
+            "jsonrpc":"2.0","id":402,
+            "method":"tools/call",
+            "params":{
+                "name":"action_context",
+                "arguments":{
+                    "intent": long_intent
+                }
+            }
+        }));
+        assert!(!is_tool_error(&resp));
+    }
+
+    // ── regression ──────────────────────────────────────────────────────
+
+    #[test]
+    fn test_tools_list_includes_action_context() {
+        init();
+        let (mut server, _tmp) = test_server();
+
+        let resp = server.handle_request(json!({
+            "jsonrpc":"2.0","id":500,
+            "method":"tools/list",
+            "params":{}
+        }));
+
+        let tools = resp["result"]["tools"].as_array().unwrap();
+        let names: Vec<&str> = tools
+            .iter()
+            .filter_map(|t| t["name"].as_str())
+            .collect();
+        assert!(
+            names.contains(&"action_context"),
+            "Tool list must include action_context, found: {:?}",
+            names
+        );
+    }
+
+    #[test]
+    fn test_operation_log_timestamps_nonzero() {
+        init();
+        let (mut server, _tmp) = test_server();
+
+        server.handle_request(json!({
+            "jsonrpc":"2.0","id":501,
+            "method":"tools/call",
+            "params":{"name":"identity_create","arguments":{}}
+        }));
+
+        assert!(!server.operation_log.is_empty());
+        assert!(
+            server.operation_log[0].timestamp > 0,
+            "Timestamp should be non-zero"
+        );
     }
 }
