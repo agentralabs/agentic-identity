@@ -1,7 +1,49 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 400">
-  <rect width="1200" height="400" fill="#1a1a1a"/>
-  <text x="600" y="180" text-anchor="middle" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="48" fill="#e0e0e0" font-weight="700">AgenticIdentity</text>
-  <text x="600" y="230" text-anchor="middle" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="20" fill="#999">Deterministic agent identity for every project</text>
-  <rect x="480" y="270" width="240" height="4" rx="2" fill="#FF6B2B"/>
-  <text x="600" y="320" text-anchor="middle" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="14" fill="#666">agentra.dev</text>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1400 360" role="img" aria-label="AgenticIdentity GitHub hero pane">
+  <defs>
+    <pattern id="grid" width="20" height="20" patternUnits="userSpaceOnUse">
+      <circle cx="2" cy="2" r="1" fill="#b8b6ae"/>
+    </pattern>
+  </defs>
+  <rect width="1400" height="360" fill="#f2f1ea"/>
+  <rect width="1400" height="360" fill="url(#grid)"/>
+  <rect x="20" y="20" width="1360" height="320" fill="none" stroke="#111111" stroke-width="2"/>
+
+  <line x1="20" y1="62" x2="1380" y2="62" stroke="#111111" stroke-width="2"/>
+  <text x="40" y="48" font-family="'JetBrains Mono', monospace" font-size="14" fill="#5f5c53" letter-spacing="2"> // AGENTRA_LABS: MODULE_HERO</text>
+  <rect x="1318" y="36" width="8" height="8" fill="#ea580c"/>
+  <text x="1336" y="48" font-family="'JetBrains Mono', monospace" font-size="12" fill="#5f5c53" letter-spacing="2">001</text>
+
+  <rect x="46" y="92" width="232" height="232" fill="none" stroke="#111111" stroke-width="2"/>
+  <rect x="46" y="92" width="232" height="38" fill="#111111"/>
+  <text x="62" y="116" font-family="'JetBrains Mono', monospace" font-size="11" fill="#f2f1ea" letter-spacing="2">IDENTITY.ANCHOR_CHAIN</text>
+
+  <rect x="112" y="160" width="100" height="28" fill="none" stroke="#111111" stroke-width="3"/>
+  <line x1="126" y1="174" x2="196" y2="174" stroke="#ea580c" stroke-width="3"/>
+  <line x1="162" y1="188" x2="162" y2="214" stroke="#111111" stroke-width="2"/>
+  <rect x="112" y="214" width="100" height="28" fill="none" stroke="#111111" stroke-width="3"/>
+  <line x1="126" y1="228" x2="196" y2="228" stroke="#ea580c" stroke-width="3"/>
+  <line x1="162" y1="242" x2="162" y2="268" stroke="#111111" stroke-width="2"/>
+  <rect x="112" y="268" width="100" height="28" fill="none" stroke="#ea580c" stroke-width="3"/>
+  <line x1="126" y1="282" x2="196" y2="282" stroke="#ea580c" stroke-width="3"/>
+  <circle cx="82" cy="174" r="8" fill="none" stroke="#111111" stroke-width="3"/>
+  <circle cx="82" cy="228" r="8" fill="none" stroke="#111111" stroke-width="3"/>
+  <circle cx="82" cy="282" r="8" fill="none" stroke="#ea580c" stroke-width="3"/>
+  <line x1="82" y1="182" x2="82" y2="220" stroke="#111111" stroke-width="2"/>
+  <line x1="82" y1="236" x2="82" y2="274" stroke="#111111" stroke-width="2"/>
+
+  <text x="324" y="136" font-family="'JetBrains Mono', monospace" font-size="52" fill="#111111" font-weight="700" letter-spacing="1">AGENTICIDENTITY</text>
+  <text x="324" y="172" font-family="'JetBrains Mono', monospace" font-size="18" fill="#ea580c" font-weight="700" letter-spacing="2">DETERMINISTIC AGENT IDENTITY + TRUST</text>
+  <text x="324" y="210" font-family="'JetBrains Mono', monospace" font-size="16" fill="#5f5c53">
+    Every project gets a cryptographic anchor. Agents prove who they are, what they did,
+  </text>
+  <text x="324" y="234" font-family="'JetBrains Mono', monospace" font-size="16" fill="#5f5c53">
+    and which workspace they belong to — portable, deterministic, and verifiable.
+  </text>
+
+  <rect x="324" y="258" width="154" height="34" fill="#111111"/>
+  <text x="344" y="280" font-family="'JetBrains Mono', monospace" font-size="12" fill="#f2f1ea" letter-spacing="2">MCP-NATIVE</text>
+  <rect x="488" y="258" width="146" height="34" fill="#111111"/>
+  <text x="508" y="280" font-family="'JetBrains Mono', monospace" font-size="12" fill="#f2f1ea" letter-spacing="2">PORTABLE</text>
+  <rect x="644" y="258" width="108" height="34" fill="#ea580c"/>
+  <text x="674" y="280" font-family="'JetBrains Mono', monospace" font-size="12" fill="#f2f1ea" letter-spacing="2">.AID</text>
 </svg>

@@ -203,6 +203,7 @@ fn rpc_error(id: Value, code: i64, message: impl Into<String>) -> Value {
 
 /// Record of an identity operation with context.
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 struct IdentityOperationRecord {
     tool_name: String,
     intent: Option<String>,

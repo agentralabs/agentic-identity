@@ -29,11 +29,23 @@ INSTALL_DIR="${HOME}/.local/bin"
 AGENTIC_DIR="${HOME}/.agentic"
 SERVER_ARGS_TEXT='[]'
 MCP_CONFIGURED_CLIENTS=()
+DRY_RUN=false
 
-# ── Profile Detection ────────────────────────────────────────────────────────
-PROFILE="${1:-desktop}"
+# ── Argument Parsing ─────────────────────────────────────────────────────────
+PROFILE="desktop"
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --profile=*) PROFILE="${1#*=}" ;;
+    --profile)   PROFILE="${2:-desktop}"; shift ;;
+    --dry-run)   DRY_RUN=true ;;
+    --dir=*)     INSTALL_DIR="${1#*=}" ;;
+    --dir)       INSTALL_DIR="${2:-$INSTALL_DIR}"; shift ;;
+    desktop|terminal|server) PROFILE="$1" ;;
+    *) ;;
+  esac
+  shift
+done
 case "$PROFILE" in
-  --profile) PROFILE="${2:-desktop}" ;;
   desktop|terminal|server) ;;
   *) PROFILE="desktop" ;;
 esac
@@ -68,6 +80,13 @@ ensure_dir() {
 try_download_release() {
   local url="https://github.com/${REPO}/releases/download/v${VERSION}"
   local tarball="${BINARY_NAME}-${PLATFORM}.tar.gz"
+
+  if [ "$DRY_RUN" = true ]; then
+    echo "  [dry-run] Would download: ${url}/${tarball}"
+    echo "  [dry-run] Would install to: ${INSTALL_DIR}/${BINARY_NAME}"
+    echo "  [dry-run] Would install to: ${INSTALL_DIR}/${MCP_BINARY_NAME}"
+    return 0
+  fi
 
   info "Trying pre-built release for ${PLATFORM}..."
   if curl -fsSL "${url}/${tarball}" -o "/tmp/${tarball}" 2>/dev/null; then
@@ -243,6 +262,10 @@ print_post_install_next_steps() {
     echo "  2. Generate a token (openssl rand -hex 32) and set AGENTIC_TOKEN on the server."
     echo "  3. Start MCP with auth, connect clients, then restart clients."
     echo "  4. Optional feedback: open https://github.com/${REPO}/issues"
+  elif [ "$PROFILE" = "desktop" ]; then
+    echo "  2. Restart any configured MCP client so it reloads MCP config."
+    echo "  3. After restart, confirm 'agentic-identity' appears in your MCP server list."
+    echo "  4. Optional feedback: open https://github.com/${REPO}/issues"
   else
     echo "  2. Restart your MCP client/system so it reloads MCP config."
     echo "  3. After restart, confirm 'agentic-identity' appears in your MCP server list."
@@ -252,10 +275,13 @@ print_post_install_next_steps() {
 
 print_completion() {
   echo ""
+  echo "100% Install complete"
+  echo ""
   echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
   echo -e "${GREEN}  AgenticIdentity installed successfully!${NC}"
   echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
   echo ""
+  echo "  Install complete: AgenticIdentity (${PROFILE})"
   echo "  Version: ${VERSION}"
   echo "  Binary:  ${INSTALL_DIR}/${BINARY_NAME}"
   echo "  MCP:     ${INSTALL_DIR}/${MCP_BINARY_NAME}"
@@ -296,24 +322,26 @@ main() {
     build_from_source
   fi
 
-  chmod +x "${INSTALL_DIR}/${BINARY_NAME}" 2>/dev/null || true
-  chmod +x "${INSTALL_DIR}/${MCP_BINARY_NAME}" 2>/dev/null || true
+  if [ "$DRY_RUN" != true ]; then
+    chmod +x "${INSTALL_DIR}/${BINARY_NAME}" 2>/dev/null || true
+    chmod +x "${INSTALL_DIR}/${MCP_BINARY_NAME}" 2>/dev/null || true
 
-  # Profile-specific setup
-  case "$PROFILE" in
-    desktop)
-      merge_mcp_config
-      ;;
-    terminal)
-      info "Terminal profile — skipping MCP config"
-      ;;
-    server)
-      info "Server profile — auth gate enabled"
-      if [ -z "${AGENTIC_TOKEN:-}" ]; then
-        warn "AGENTIC_TOKEN not set — server will require it at runtime"
-      fi
-      ;;
-  esac
+    # Profile-specific setup
+    case "$PROFILE" in
+      desktop)
+        merge_mcp_config
+        ;;
+      terminal)
+        info "Terminal profile — skipping MCP config"
+        ;;
+      server)
+        info "Server profile — auth gate enabled"
+        if [ -z "${AGENTIC_TOKEN:-}" ]; then
+          warn "AGENTIC_TOKEN not set — server will require it at runtime"
+        fi
+        ;;
+    esac
+  fi
 
   check_path
   print_completion
