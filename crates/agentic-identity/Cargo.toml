@@ -11,6 +11,15 @@ readme = "../../README.md"
 keywords = ["ai", "agent", "identity", "cryptography", "trust"]
 categories = ["cryptography", "authentication"]
 
+[[bin]]
+name = "aid"
+path = "src/bin/aid.rs"
+required-features = ["cli"]
+
+[features]
+default = ["cli"]
+cli = ["dep:clap", "dep:env_logger", "dep:anyhow"]
+
 [dependencies]
 ed25519-dalek.workspace = true
 x25519-dalek.workspace = true
@@ -31,6 +40,11 @@ chrono.workspace = true
 log.workspace = true
 thiserror.workspace = true
 
+# CLI (optional, behind "cli" feature)
+clap = { workspace = true, optional = true }
+env_logger = { workspace = true, optional = true }
+anyhow = { workspace = true, optional = true }
+
 [dev-dependencies]
 tempfile.workspace = true
 criterion.workspace = true
@@ -39,6 +53,11 @@ criterion.workspace = true
 name = "crypto_bench"
 path = "../../benches/crypto_bench.rs"
 harness = false
+
+# CLI integration tests
+[[test]]
+name = "cli_tests"
+path = "../../tests/integration/cli_tests.rs"
 
 # Stress tests (workspace-level)
 [[test]]

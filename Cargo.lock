@@ -16,14 +16,17 @@ dependencies = [
 name = "agentic-identity"
 version = "0.1.1"
 dependencies = [
+ "anyhow",
  "argon2",
  "base64",
  "bincode",
  "bs58",
  "chacha20poly1305",
  "chrono",
+ "clap",
  "criterion",
  "ed25519-dalek",
+ "env_logger",
  "hex",
  "hkdf",
  "log",
