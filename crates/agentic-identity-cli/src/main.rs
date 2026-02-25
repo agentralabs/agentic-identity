@@ -123,7 +123,11 @@ fn collect_identity_entries() -> Result<Vec<(String, String, String)>> {
     }
 
     let trust_store = TrustStore::new(trust_dir())?;
-    for id in trust_store.list_granted()?.into_iter().chain(trust_store.list_received()?) {
+    for id in trust_store
+        .list_granted()?
+        .into_iter()
+        .chain(trust_store.list_received()?)
+    {
         if let Ok(grant) = trust_store.load_grant(&id) {
             let caps = grant
                 .capabilities
@@ -147,12 +151,15 @@ fn find_identity_evidence(query: &str, limit: usize) -> Result<Vec<serde_json::V
     for (kind, id, text) in collect_identity_entries()? {
         let score = score_text(query, &text);
         if score > 0.0 {
-            ranked.push((score, serde_json::json!({
-                "kind": kind,
-                "id": id,
-                "text": text,
-                "score": score
-            })));
+            ranked.push((
+                score,
+                serde_json::json!({
+                    "kind": kind,
+                    "id": id,
+                    "text": text,
+                    "score": score
+                }),
+            ));
         }
     }
     ranked.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
@@ -1667,7 +1674,10 @@ fn cmd_query_text(text: &str, limit: usize) -> Result<()> {
             .and_then(|v| v.as_str())
             .unwrap_or("unknown");
         let id = row.get("id").and_then(|v| v.as_str()).unwrap_or("-");
-        let score = row.get("score").and_then(|v| v.as_f64()).unwrap_or_default();
+        let score = row
+            .get("score")
+            .and_then(|v| v.as_f64())
+            .unwrap_or_default();
         let text = row.get("text").and_then(|v| v.as_str()).unwrap_or("");
         println!("  - [{}] {} score={:.3} {}", kind, id, score, text);
     }
@@ -1693,7 +1703,11 @@ fn cmd_suggest_query(query: &str, limit: usize) -> Result<()> {
     let evidence = find_identity_evidence(query, limit)?;
     let suggestions: Vec<String> = evidence
         .into_iter()
-        .filter_map(|row| row.get("text").and_then(|v| v.as_str()).map(|s| s.to_string()))
+        .filter_map(|row| {
+            row.get("text")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string())
+        })
         .collect();
     println!(
         "{}",
@@ -1711,7 +1725,10 @@ fn cmd_ground_claim(claim: &str, threshold: f32) -> Result<()> {
     let strong: Vec<_> = evidence
         .iter()
         .filter(|row| {
-            row.get("score").and_then(|v| v.as_f64()).unwrap_or_default() >= threshold as f64
+            row.get("score")
+                .and_then(|v| v.as_f64())
+                .unwrap_or_default()
+                >= threshold as f64
         })
         .cloned()
         .collect();

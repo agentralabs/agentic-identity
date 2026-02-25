@@ -2793,7 +2793,10 @@ impl McpServer {
 
         // Search trust grants
         if let Ok(store) = TrustStore::new(&self.trust_dir) {
-            for grant_ids in [store.list_granted().ok(), store.list_received().ok()].into_iter().flatten() {
+            for grant_ids in [store.list_granted().ok(), store.list_received().ok()]
+                .into_iter()
+                .flatten()
+            {
                 for gid in grant_ids.iter().take(100) {
                     if let Ok(grant) = store.load_grant(gid) {
                         let mut score = 0.0f32;
@@ -2802,8 +2805,18 @@ impl McpServer {
                                 score += 1.0;
                             }
                             let cap_lower = cap.uri.to_lowercase();
-                            let cap_words: Vec<&str> = cap_lower.split(':').flat_map(|s| s.split_whitespace()).collect();
-                            let overlap = claim_words.iter().filter(|w| cap_words.iter().any(|cw| cw.contains(**w) || w.contains(cw))).count();
+                            let cap_words: Vec<&str> = cap_lower
+                                .split(':')
+                                .flat_map(|s| s.split_whitespace())
+                                .collect();
+                            let overlap = claim_words
+                                .iter()
+                                .filter(|w| {
+                                    cap_words
+                                        .iter()
+                                        .any(|cw| cw.contains(**w) || w.contains(cw))
+                                })
+                                .count();
                             score += overlap as f32 * 0.3;
                         }
                         if score > 0.0 {
@@ -2827,7 +2840,10 @@ impl McpServer {
                 for rid in receipt_ids.iter().take(100) {
                     if let Ok(receipt) = store.load(rid) {
                         let action_lower = receipt.action.description.to_lowercase();
-                        let overlap = claim_words.iter().filter(|w| action_lower.contains(**w)).count();
+                        let overlap = claim_words
+                            .iter()
+                            .filter(|w| action_lower.contains(**w))
+                            .count();
                         if overlap > 0 {
                             let score = overlap as f32 / claim_words.len().max(1) as f32;
                             evidence.push(json!({
@@ -2884,10 +2900,18 @@ impl McpServer {
 
         // Search trust grants
         if let Ok(store) = TrustStore::new(&self.trust_dir) {
-            for grant_ids in [store.list_granted().ok(), store.list_received().ok()].into_iter().flatten() {
+            for grant_ids in [store.list_granted().ok(), store.list_received().ok()]
+                .into_iter()
+                .flatten()
+            {
                 for gid in grant_ids.iter().take(100) {
                     if let Ok(grant) = store.load_grant(gid) {
-                        let cap_str: String = grant.capabilities.iter().map(|c| c.uri.to_lowercase()).collect::<Vec<_>>().join(" ");
+                        let cap_str: String = grant
+                            .capabilities
+                            .iter()
+                            .map(|c| c.uri.to_lowercase())
+                            .collect::<Vec<_>>()
+                            .join(" ");
                         let overlap = query_words.iter().filter(|w| cap_str.contains(**w)).count();
                         if overlap > 0 {
                             let score = overlap as f32 / query_words.len().max(1) as f32;
@@ -2912,18 +2936,24 @@ impl McpServer {
                 for rid in receipt_ids.iter().take(200) {
                     if let Ok(receipt) = store.load(rid) {
                         let action_lower = receipt.action.description.to_lowercase();
-                        let overlap = query_words.iter().filter(|w| action_lower.contains(**w)).count();
+                        let overlap = query_words
+                            .iter()
+                            .filter(|w| action_lower.contains(**w))
+                            .count();
                         if overlap > 0 {
                             let score = overlap as f32 / query_words.len().max(1) as f32;
-                            evidence.push((score, json!({
-                                "type": "receipt",
-                                "id": receipt.id.0,
-                                "actor": receipt.actor.0,
-                                "action_type": format!("{:?}", receipt.action_type),
-                                "action": receipt.action.description,
-                                "timestamp": micros_to_rfc3339(receipt.timestamp),
-                                "score": score,
-                            })));
+                            evidence.push((
+                                score,
+                                json!({
+                                    "type": "receipt",
+                                    "id": receipt.id.0,
+                                    "actor": receipt.actor.0,
+                                    "action_type": format!("{:?}", receipt.action_type),
+                                    "action": receipt.action.description,
+                                    "timestamp": micros_to_rfc3339(receipt.timestamp),
+                                    "score": score,
+                                }),
+                            ));
                         }
                     }
                 }
@@ -2950,17 +2980,17 @@ impl McpServer {
             Some(q) if !q.trim().is_empty() => q,
             _ => return tool_error(id, "'query' is required"),
         };
-        let limit = args
-            .get("limit")
-            .and_then(|v| v.as_u64())
-            .unwrap_or(5) as usize;
+        let limit = args.get("limit").and_then(|v| v.as_u64()).unwrap_or(5) as usize;
 
         let query_lower = query.to_lowercase();
         let mut suggestions: Vec<Value> = Vec::new();
 
         // Suggest from trust grant capabilities
         if let Ok(store) = TrustStore::new(&self.trust_dir) {
-            for grant_ids in [store.list_granted().ok(), store.list_received().ok()].into_iter().flatten() {
+            for grant_ids in [store.list_granted().ok(), store.list_received().ok()]
+                .into_iter()
+                .flatten()
+            {
                 for gid in grant_ids.iter().take(50) {
                     if let Ok(grant) = store.load_grant(gid) {
                         for cap in &grant.capabilities {
@@ -3018,9 +3048,13 @@ impl McpServer {
             _ => return tool_error(id, "'name' is required"),
         };
         let ws_id = self.workspace_manager.create(name);
-        tool_ok(id, serde_json::to_string_pretty(&json!({
-            "workspace_id": ws_id, "name": name, "status": "created"
-        })).unwrap())
+        tool_ok(
+            id,
+            serde_json::to_string_pretty(&json!({
+                "workspace_id": ws_id, "name": name, "status": "created"
+            }))
+            .unwrap(),
+        )
     }
 
     fn tool_identity_workspace_add(&mut self, id: Value, args: &Value) -> Value {
@@ -3032,8 +3066,14 @@ impl McpServer {
             Some(p) => p,
             _ => return tool_error(id, "'path' is required"),
         };
-        let role = args.get("role").and_then(|v| v.as_str()).unwrap_or("primary");
-        let label = args.get("label").and_then(|v| v.as_str()).map(|s| s.to_string());
+        let role = args
+            .get("role")
+            .and_then(|v| v.as_str())
+            .unwrap_or("primary");
+        let label = args
+            .get("label")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
 
         match self.workspace_manager.add_context(workspace_id, path, role, label) {
             Ok(ctx_id) => tool_ok(id, serde_json::to_string_pretty(&json!({
@@ -3049,11 +3089,15 @@ impl McpServer {
             _ => return tool_error(id, "'workspace_id' is required"),
         };
         match self.workspace_manager.list(workspace_id) {
-            Ok(items) => tool_ok(id, serde_json::to_string_pretty(&json!({
-                "workspace_id": workspace_id,
-                "count": items.len(),
-                "contexts": items
-            })).unwrap()),
+            Ok(items) => tool_ok(
+                id,
+                serde_json::to_string_pretty(&json!({
+                    "workspace_id": workspace_id,
+                    "count": items.len(),
+                    "contexts": items
+                }))
+                .unwrap(),
+            ),
             Err(e) => tool_error(id, e),
         }
     }
@@ -3067,11 +3111,20 @@ impl McpServer {
             Some(q) => q,
             _ => return tool_error(id, "'query' is required"),
         };
-        let max_per = args.get("max_per_context").and_then(|v| v.as_u64()).unwrap_or(10) as usize;
+        let max_per = args
+            .get("max_per_context")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(10) as usize;
 
-        match self.workspace_manager.query_all(workspace_id, query, max_per) {
+        match self
+            .workspace_manager
+            .query_all(workspace_id, query, max_per)
+        {
             Ok(results) => {
-                let total: usize = results.iter().map(|r| r["matches"].as_array().map(|a| a.len()).unwrap_or(0)).sum();
+                let total: usize = results
+                    .iter()
+                    .map(|r| r["matches"].as_array().map(|a| a.len()).unwrap_or(0))
+                    .sum();
                 tool_ok(id, serde_json::to_string_pretty(&json!({
                     "workspace_id": workspace_id, "query": query, "total_matches": total, "results": results
                 })).unwrap())
@@ -3089,7 +3142,10 @@ impl McpServer {
             Some(i) => i,
             _ => return tool_error(id, "'item' is required"),
         };
-        let max_per = args.get("max_per_context").and_then(|v| v.as_u64()).unwrap_or(5) as usize;
+        let max_per = args
+            .get("max_per_context")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(5) as usize;
 
         match self.workspace_manager.compare(workspace_id, item, max_per) {
             Ok(result) => tool_ok(id, serde_json::to_string_pretty(&result).unwrap()),
@@ -3125,6 +3181,7 @@ struct IdentityWorkspaceContext {
     receipt_dir: PathBuf,
 }
 
+#[allow(dead_code)]
 struct IdentityWorkspace {
     id: String,
     name: String,
@@ -3147,11 +3204,14 @@ impl IdentityWorkspaceManager {
     fn create(&mut self, name: &str) -> String {
         let id = format!("iws_{}", self.next_id);
         self.next_id += 1;
-        self.workspaces.insert(id.clone(), IdentityWorkspace {
-            id: id.clone(),
-            name: name.to_string(),
-            contexts: Vec::new(),
-        });
+        self.workspaces.insert(
+            id.clone(),
+            IdentityWorkspace {
+                id: id.clone(),
+                name: name.to_string(),
+                contexts: Vec::new(),
+            },
+        );
         id
     }
 
@@ -3162,7 +3222,9 @@ impl IdentityWorkspaceManager {
         role: &str,
         label: Option<String>,
     ) -> Result<String, String> {
-        let workspace = self.workspaces.get_mut(workspace_id)
+        let workspace = self
+            .workspaces
+            .get_mut(workspace_id)
             .ok_or_else(|| format!("Workspace not found: {workspace_id}"))?;
 
         let dir = PathBuf::from(path);
@@ -3188,18 +3250,24 @@ impl IdentityWorkspaceManager {
     }
 
     fn list(&self, workspace_id: &str) -> Result<Vec<Value>, String> {
-        let workspace = self.workspaces.get(workspace_id)
+        let workspace = self
+            .workspaces
+            .get(workspace_id)
             .ok_or_else(|| format!("Workspace not found: {workspace_id}"))?;
-        Ok(workspace.contexts.iter().map(|ctx| {
-            json!({
-                "context_id": ctx.id,
-                "role": ctx.role,
-                "path": ctx.path,
-                "label": ctx.label,
-                "has_trust_store": ctx.trust_dir.exists(),
-                "has_receipt_store": ctx.receipt_dir.exists(),
+        Ok(workspace
+            .contexts
+            .iter()
+            .map(|ctx| {
+                json!({
+                    "context_id": ctx.id,
+                    "role": ctx.role,
+                    "path": ctx.path,
+                    "label": ctx.label,
+                    "has_trust_store": ctx.trust_dir.exists(),
+                    "has_receipt_store": ctx.receipt_dir.exists(),
+                })
             })
-        }).collect())
+            .collect())
     }
 
     fn query_all(
@@ -3208,7 +3276,9 @@ impl IdentityWorkspaceManager {
         query: &str,
         max_per_context: usize,
     ) -> Result<Vec<Value>, String> {
-        let workspace = self.workspaces.get(workspace_id)
+        let workspace = self
+            .workspaces
+            .get(workspace_id)
             .ok_or_else(|| format!("Workspace not found: {workspace_id}"))?;
 
         let query_lower = query.to_lowercase();
@@ -3221,11 +3291,17 @@ impl IdentityWorkspaceManager {
             // Search trust grants
             if let Ok(ts) = TrustStore::new(&ctx.trust_dir) {
                 let mut grant_ids = Vec::new();
-                if let Ok(ids) = ts.list_granted() { grant_ids.extend(ids); }
-                if let Ok(ids) = ts.list_received() { grant_ids.extend(ids); }
+                if let Ok(ids) = ts.list_granted() {
+                    grant_ids.extend(ids);
+                }
+                if let Ok(ids) = ts.list_received() {
+                    grant_ids.extend(ids);
+                }
                 for gid in grant_ids.iter().take(max_per_context * 2) {
                     if let Ok(grant) = ts.load_grant(gid) {
-                        let cap_str: String = grant.capabilities.iter()
+                        let cap_str: String = grant
+                            .capabilities
+                            .iter()
                             .map(|c| c.uri.to_lowercase())
                             .collect::<Vec<_>>()
                             .join(" ");
@@ -3248,7 +3324,10 @@ impl IdentityWorkspaceManager {
                     for rid in receipt_ids.iter().take(max_per_context * 2) {
                         if let Ok(receipt) = rs.load(rid) {
                             let action_lower = receipt.action.description.to_lowercase();
-                            let overlap = query_words.iter().filter(|w| action_lower.contains(**w)).count();
+                            let overlap = query_words
+                                .iter()
+                                .filter(|w| action_lower.contains(**w))
+                                .count();
                             if overlap > 0 {
                                 matches.push(json!({
                                     "type": "receipt",
@@ -3288,7 +3367,9 @@ impl IdentityWorkspaceManager {
         let mut missing_from = Vec::new();
 
         for (i, r) in results.iter().enumerate() {
-            let label = workspace.contexts[i].label.clone()
+            let label = workspace.contexts[i]
+                .label
+                .clone()
                 .unwrap_or_else(|| r["context_id"].as_str().unwrap_or("unknown").to_string());
             let count = r["match_count"].as_u64().unwrap_or(0);
             if count > 0 {
@@ -3306,11 +3387,7 @@ impl IdentityWorkspaceManager {
         }))
     }
 
-    fn cross_reference(
-        &self,
-        workspace_id: &str,
-        item: &str,
-    ) -> Result<Value, String> {
+    fn cross_reference(&self, workspace_id: &str, item: &str) -> Result<Value, String> {
         let cmp = self.compare(workspace_id, item, 5)?;
         Ok(json!({
             "item": item,
@@ -4692,8 +4769,14 @@ mod tests {
         assert!(is_ok(&ground_resp));
         assert!(!is_tool_error(&ground_resp));
         let j = tool_json(&ground_resp);
-        assert_eq!(j["status"], "verified", "Claim matching trust grant should be verified");
-        assert!(j["evidence"].as_array().map(|a| !a.is_empty()).unwrap_or(false));
+        assert_eq!(
+            j["status"], "verified",
+            "Claim matching trust grant should be verified"
+        );
+        assert!(j["evidence"]
+            .as_array()
+            .map(|a| !a.is_empty())
+            .unwrap_or(false));
     }
 
     #[test]
@@ -4726,8 +4809,15 @@ mod tests {
         }));
         assert!(is_ok(&ground_resp));
         let j = tool_json(&ground_resp);
-        assert_eq!(j["status"], "verified", "Claim matching receipt action should be verified");
-        assert!(j["evidence"].as_array().unwrap().iter().any(|e| e["type"] == "receipt"));
+        assert_eq!(
+            j["status"], "verified",
+            "Claim matching receipt action should be verified"
+        );
+        assert!(j["evidence"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|e| e["type"] == "receipt"));
     }
 
     #[test]
@@ -4779,7 +4869,10 @@ mod tests {
         }));
         assert!(is_ok(&resp));
         let j = tool_json(&resp);
-        assert_eq!(j["status"], "ungrounded", "Claim about unrelated capability should be ungrounded");
+        assert_eq!(
+            j["status"], "ungrounded",
+            "Claim about unrelated capability should be ungrounded"
+        );
     }
 
     #[test]
@@ -4817,7 +4910,10 @@ mod tests {
         }));
 
         // Very long claim — should not panic or hang.
-        let long_claim = format!("agent can read files {}", "and perform many operations ".repeat(50));
+        let long_claim = format!(
+            "agent can read files {}",
+            "and perform many operations ".repeat(50)
+        );
         let resp = server.handle_request(json!({
             "jsonrpc":"2.0","id":3,
             "method":"tools/call",
@@ -4862,7 +4958,10 @@ mod tests {
         }));
         assert!(is_ok(&resp));
         let j = tool_json(&resp);
-        assert_eq!(j["status"], "verified", "Grounding should be case-insensitive");
+        assert_eq!(
+            j["status"], "verified",
+            "Grounding should be case-insensitive"
+        );
     }
 
     #[test]
@@ -4920,7 +5019,10 @@ mod tests {
         let j = tool_json(&resp);
         assert_eq!(j["status"], "verified");
         let evidence_count = j["evidence_count"].as_u64().unwrap_or(0);
-        assert!(evidence_count >= 2, "Should have multiple pieces of evidence, got {evidence_count}");
+        assert!(
+            evidence_count >= 2,
+            "Should have multiple pieces of evidence, got {evidence_count}"
+        );
     }
 
     #[test]
@@ -4954,8 +5056,15 @@ mod tests {
         assert!(!is_tool_error(&resp));
         let j = tool_json(&resp);
         assert_eq!(j["query"], "write notes");
-        assert!(j["count"].as_u64().unwrap_or(0) >= 1, "Should find at least one evidence item");
-        assert!(j["evidence"].as_array().unwrap().iter().any(|e| e["type"] == "trust_grant"));
+        assert!(
+            j["count"].as_u64().unwrap_or(0) >= 1,
+            "Should find at least one evidence item"
+        );
+        assert!(j["evidence"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|e| e["type"] == "trust_grant"));
     }
 
     #[test]
@@ -4989,7 +5098,10 @@ mod tests {
         }));
         assert!(is_ok(&resp));
         let j = tool_json(&resp);
-        assert!(j["count"].as_u64().unwrap_or(0) <= 2, "max_results=2 should limit output");
+        assert!(
+            j["count"].as_u64().unwrap_or(0) <= 2,
+            "max_results=2 should limit output"
+        );
     }
 
     #[test]
@@ -5023,7 +5135,10 @@ mod tests {
         assert!(!is_tool_error(&resp));
         let j = tool_json(&resp);
         assert_eq!(j["query"], "read");
-        assert!(j["count"].as_u64().unwrap_or(0) >= 1, "Should suggest at least one capability");
+        assert!(
+            j["count"].as_u64().unwrap_or(0) >= 1,
+            "Should suggest at least one capability"
+        );
     }
 
     #[test]
@@ -5057,7 +5172,10 @@ mod tests {
         }));
         assert!(is_ok(&resp));
         let j = tool_json(&resp);
-        assert!(j["count"].as_u64().unwrap_or(0) <= 2, "limit=2 should cap suggestions");
+        assert!(
+            j["count"].as_u64().unwrap_or(0) <= 2,
+            "limit=2 should cap suggestions"
+        );
     }
 
     // ── Workspace tests ──────────────────────────────────────────────────
@@ -5125,7 +5243,10 @@ mod tests {
                 "arguments":{"name":"ws-add"}
             }
         }));
-        let ws_id = tool_json(&ws_resp)["workspace_id"].as_str().unwrap().to_string();
+        let ws_id = tool_json(&ws_resp)["workspace_id"]
+            .as_str()
+            .unwrap()
+            .to_string();
 
         // Add context.
         let add_resp = server.handle_request(json!({
@@ -5164,10 +5285,20 @@ mod tests {
                 "arguments":{"name":"ws-multi"}
             }
         }));
-        let ws_id = tool_json(&ws_resp)["workspace_id"].as_str().unwrap().to_string();
+        let ws_id = tool_json(&ws_resp)["workspace_id"]
+            .as_str()
+            .unwrap()
+            .to_string();
 
         // Add 3 contexts with different roles.
-        for (i, (dir, role)) in [(dir_a, "primary"), (dir_b, "secondary"), (dir_c, "reference")].iter().enumerate() {
+        for (i, (dir, role)) in [
+            (dir_a, "primary"),
+            (dir_b, "secondary"),
+            (dir_c, "reference"),
+        ]
+        .iter()
+        .enumerate()
+        {
             let resp = server.handle_request(json!({
                 "jsonrpc":"2.0","id": 10 + i as i64,
                 "method":"tools/call",
@@ -5209,7 +5340,10 @@ mod tests {
             "method":"tools/call",
             "params":{"name":"identity_workspace_create","arguments":{"name":"ws-list"}}
         }));
-        let ws_id = tool_json(&ws_resp)["workspace_id"].as_str().unwrap().to_string();
+        let ws_id = tool_json(&ws_resp)["workspace_id"]
+            .as_str()
+            .unwrap()
+            .to_string();
 
         server.handle_request(json!({
             "jsonrpc":"2.0","id":2,
@@ -5268,7 +5402,10 @@ mod tests {
             "method":"tools/call",
             "params":{"name":"identity_workspace_create","arguments":{"name":"ws-query-single"}}
         }));
-        let ws_id = tool_json(&ws_resp)["workspace_id"].as_str().unwrap().to_string();
+        let ws_id = tool_json(&ws_resp)["workspace_id"]
+            .as_str()
+            .unwrap()
+            .to_string();
 
         server.handle_request(json!({
             "jsonrpc":"2.0","id":4,
@@ -5298,7 +5435,10 @@ mod tests {
         assert!(is_ok(&resp));
         assert!(!is_tool_error(&resp));
         let j = tool_json(&resp);
-        assert!(j["total_matches"].as_u64().unwrap_or(0) >= 1, "Should find at least one match");
+        assert!(
+            j["total_matches"].as_u64().unwrap_or(0) >= 1,
+            "Should find at least one match"
+        );
     }
 
     #[test]
@@ -5336,7 +5476,10 @@ mod tests {
             "method":"tools/call",
             "params":{"name":"identity_workspace_create","arguments":{"name":"ws-across"}}
         }));
-        let ws_id = tool_json(&ws_resp)["workspace_id"].as_str().unwrap().to_string();
+        let ws_id = tool_json(&ws_resp)["workspace_id"]
+            .as_str()
+            .unwrap()
+            .to_string();
 
         // Add same dir twice with different labels (simulates two agents sharing store).
         server.handle_request(json!({
@@ -5408,7 +5551,10 @@ mod tests {
             "method":"tools/call",
             "params":{"name":"identity_workspace_create","arguments":{"name":"ws-cmp-found"}}
         }));
-        let ws_id = tool_json(&ws_resp)["workspace_id"].as_str().unwrap().to_string();
+        let ws_id = tool_json(&ws_resp)["workspace_id"]
+            .as_str()
+            .unwrap()
+            .to_string();
 
         // Add the same data directory twice (both should find "deploy").
         for i in 0..2 {
@@ -5472,7 +5618,10 @@ mod tests {
             "method":"tools/call",
             "params":{"name":"identity_workspace_create","arguments":{"name":"ws-cmp-missing"}}
         }));
-        let ws_id = tool_json(&ws_resp)["workspace_id"].as_str().unwrap().to_string();
+        let ws_id = tool_json(&ws_resp)["workspace_id"]
+            .as_str()
+            .unwrap()
+            .to_string();
 
         // Context 1: has deploy grant.
         server.handle_request(json!({
@@ -5515,9 +5664,17 @@ mod tests {
         let found_in = j["found_in"].as_array().unwrap();
         let missing_from = j["missing_from"].as_array().unwrap();
         assert_eq!(found_in.len(), 1, "Deploy should only be in one context");
-        assert_eq!(missing_from.len(), 1, "Deploy should be missing from one context");
-        assert!(found_in.iter().any(|v| v.as_str().unwrap().contains("has-deploy")));
-        assert!(missing_from.iter().any(|v| v.as_str().unwrap().contains("no-deploy")));
+        assert_eq!(
+            missing_from.len(),
+            1,
+            "Deploy should be missing from one context"
+        );
+        assert!(found_in
+            .iter()
+            .any(|v| v.as_str().unwrap().contains("has-deploy")));
+        assert!(missing_from
+            .iter()
+            .any(|v| v.as_str().unwrap().contains("no-deploy")));
     }
 
     #[test]
@@ -5545,7 +5702,10 @@ mod tests {
             "method":"tools/call",
             "params":{"name":"identity_workspace_create","arguments":{"name":"ws-xref"}}
         }));
-        let ws_id = tool_json(&ws_resp)["workspace_id"].as_str().unwrap().to_string();
+        let ws_id = tool_json(&ws_resp)["workspace_id"]
+            .as_str()
+            .unwrap()
+            .to_string();
 
         // Two contexts: one with data, one empty.
         server.handle_request(json!({
@@ -5578,7 +5738,10 @@ mod tests {
         let j = tool_json(&resp);
         assert!(j["present_in"].as_array().unwrap().len() >= 1);
         assert!(j["absent_from"].as_array().unwrap().len() >= 1);
-        assert!(j["coverage"].as_str().unwrap().contains("/"), "Coverage should be in N/M format");
+        assert!(
+            j["coverage"].as_str().unwrap().contains("/"),
+            "Coverage should be in N/M format"
+        );
     }
 
     #[test]
@@ -5591,7 +5754,10 @@ mod tests {
             "method":"tools/call",
             "params":{"name":"identity_workspace_create","arguments":{"name":"ws-empty"}}
         }));
-        let ws_id = tool_json(&ws_resp)["workspace_id"].as_str().unwrap().to_string();
+        let ws_id = tool_json(&ws_resp)["workspace_id"]
+            .as_str()
+            .unwrap()
+            .to_string();
 
         // Query empty workspace (no contexts added).
         let resp = server.handle_request(json!({
@@ -5623,7 +5789,10 @@ mod tests {
                 "arguments":{"workspace_id":"iws_nonexistent"}
             }
         }));
-        assert!(is_tool_error(&resp), "Non-existent workspace should return error");
+        assert!(
+            is_tool_error(&resp),
+            "Non-existent workspace should return error"
+        );
         let text = tool_text(&resp);
         assert!(text.contains("not found") || text.contains("Workspace not found"));
     }
@@ -5638,7 +5807,10 @@ mod tests {
             "method":"tools/call",
             "params":{"name":"identity_workspace_create","arguments":{"name":"ws-bad-path"}}
         }));
-        let ws_id = tool_json(&ws_resp)["workspace_id"].as_str().unwrap().to_string();
+        let ws_id = tool_json(&ws_resp)["workspace_id"]
+            .as_str()
+            .unwrap()
+            .to_string();
 
         // Add a path that does not exist.
         let resp = server.handle_request(json!({
@@ -5652,7 +5824,10 @@ mod tests {
                 }
             }
         }));
-        assert!(is_tool_error(&resp), "Non-existent path should return error");
+        assert!(
+            is_tool_error(&resp),
+            "Non-existent path should return error"
+        );
         let text = tool_text(&resp);
         assert!(text.contains("not found") || text.contains("Path not found"));
     }
@@ -5699,7 +5874,10 @@ mod tests {
             }
         }));
         let j_after = tool_json(&resp_after);
-        assert_eq!(j_after["status"], "verified", "After granting, claim should be verified");
+        assert_eq!(
+            j_after["status"], "verified",
+            "After granting, claim should be verified"
+        );
     }
 
     #[test]
@@ -5753,7 +5931,10 @@ mod tests {
             "method":"tools/call",
             "params":{"name":"identity_workspace_create","arguments":{"name":"ws-perm-compare"}}
         }));
-        let ws_id = tool_json(&ws_resp)["workspace_id"].as_str().unwrap().to_string();
+        let ws_id = tool_json(&ws_resp)["workspace_id"]
+            .as_str()
+            .unwrap()
+            .to_string();
 
         server.handle_request(json!({
             "jsonrpc":"2.0","id":6,
@@ -5828,9 +6009,12 @@ mod tests {
             assert!(is_ok(&resp));
             let j = tool_json(&resp);
             assert_eq!(
-                j["status"].as_str().unwrap(), *expected,
+                j["status"].as_str().unwrap(),
+                *expected,
                 "Claim '{}' should be {}, got {}",
-                claim, expected, j["status"]
+                claim,
+                expected,
+                j["status"]
             );
         }
     }
@@ -5842,7 +6026,12 @@ mod tests {
         let ctx_tmp = tempfile::tempdir().unwrap();
 
         let roles = ["primary", "secondary", "reference", "archive"];
-        let labels = ["Main Agent", "Backup Agent", "Reference Docs", "Archived Agent"];
+        let labels = [
+            "Main Agent",
+            "Backup Agent",
+            "Reference Docs",
+            "Archived Agent",
+        ];
         let mut dirs = Vec::new();
 
         for (i, _) in roles.iter().enumerate() {
@@ -5854,9 +6043,14 @@ mod tests {
             "method":"tools/call",
             "params":{"name":"identity_workspace_create","arguments":{"name":"ws-roles"}}
         }));
-        let ws_id = tool_json(&ws_resp)["workspace_id"].as_str().unwrap().to_string();
+        let ws_id = tool_json(&ws_resp)["workspace_id"]
+            .as_str()
+            .unwrap()
+            .to_string();
 
-        for (i, (dir, (role, label))) in dirs.iter().zip(roles.iter().zip(labels.iter())).enumerate() {
+        for (i, (dir, (role, label))) in
+            dirs.iter().zip(roles.iter().zip(labels.iter())).enumerate()
+        {
             let resp = server.handle_request(json!({
                 "jsonrpc":"2.0","id": 10 + i as i64,
                 "method":"tools/call",
@@ -5870,7 +6064,10 @@ mod tests {
                     }
                 }
             }));
-            assert!(!is_tool_error(&resp), "Adding context {i} with role {role} should succeed");
+            assert!(
+                !is_tool_error(&resp),
+                "Adding context {i} with role {role} should succeed"
+            );
         }
 
         // List and verify roles + labels.
@@ -5884,8 +6081,16 @@ mod tests {
 
         let contexts = j["contexts"].as_array().unwrap();
         for (i, ctx) in contexts.iter().enumerate() {
-            assert_eq!(ctx["role"].as_str().unwrap(), roles[i], "Role mismatch at index {i}");
-            assert_eq!(ctx["label"].as_str().unwrap(), labels[i], "Label mismatch at index {i}");
+            assert_eq!(
+                ctx["role"].as_str().unwrap(),
+                roles[i],
+                "Role mismatch at index {i}"
+            );
+            assert_eq!(
+                ctx["label"].as_str().unwrap(),
+                labels[i],
+                "Label mismatch at index {i}"
+            );
         }
     }
 
@@ -5950,7 +6155,10 @@ mod tests {
             "method":"tools/call",
             "params":{"name":"identity_workspace_create","arguments":{"name":"full-workflow"}}
         }));
-        let ws_id = tool_json(&ws_resp)["workspace_id"].as_str().unwrap().to_string();
+        let ws_id = tool_json(&ws_resp)["workspace_id"]
+            .as_str()
+            .unwrap()
+            .to_string();
 
         // Step 7: Add contexts (main + empty for comparison).
         let ctx_tmp = tempfile::tempdir().unwrap();
