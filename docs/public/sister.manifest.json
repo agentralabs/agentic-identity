@@ -1,0 +1,17 @@
+{
+  "key": "identity",
+  "name": "AgenticIdentity",
+  "include_landing": true,
+  "page_ids": [
+    "quickstart",
+    "installation",
+    "command-surface",
+    "concepts",
+    "api-reference",
+    "integration-guide",
+    "file-format",
+    "benchmarks",
+    "faq"
+  ],
+  "slug_by_id": {}
+}

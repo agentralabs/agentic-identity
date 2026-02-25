@@ -14,7 +14,7 @@ dependencies = [
 
 [[package]]
 name = "agentic-identity"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "argon2",
  "base64",
@@ -38,7 +38,7 @@ dependencies = [
 
 [[package]]
 name = "agentic-identity-wasm"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "agentic-identity",
  "getrandom",
