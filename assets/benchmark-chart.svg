@@ -1,0 +1,63 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 820 420" role="img" aria-label="AgenticIdentity benchmark chart in Agentra design system">
+  <defs>
+    <pattern id="grid" width="20" height="20" patternUnits="userSpaceOnUse">
+      <circle cx="2" cy="2" r="1" fill="#c9c6bb"/>
+    </pattern>
+    <style><![CDATA[
+      .mono { font-family:'IBM Plex Mono','JetBrains Mono',monospace; }
+      .ink { fill:#121212; }
+      .muted { fill:#6d6a63; }
+      .accent { fill:#ea580c; }
+      .frame { fill:#fffdf6; stroke:#1f1f1f; stroke-width:2; }
+      .bar-fast { fill:#121212; }
+      .bar-mid { fill:#4f4a43; }
+      .bar-slow { fill:#ea580c; }
+    ]]></style>
+  </defs>
+
+  <rect width="820" height="420" fill="#f2f1ea"/>
+  <rect width="820" height="420" fill="url(#grid)"/>
+  <line x1="18" y1="28" x2="802" y2="28" stroke="#1f1f1f"/>
+  <text x="18" y="21" class="mono muted" font-size="11" letter-spacing="2">// BENCHMARK: CRYPTOGRAPHIC IDENTITY OPERATIONS</text>
+
+  <rect x="22" y="44" width="776" height="354" class="frame"/>
+  <line x1="110" y1="86" x2="110" y2="340" stroke="#1f1f1f"/>
+  <line x1="110" y1="340" x2="760" y2="340" stroke="#1f1f1f"/>
+
+  <text x="72" y="96" class="mono muted" font-size="10" text-anchor="end">50us</text>
+  <text x="72" y="156" class="mono muted" font-size="10" text-anchor="end">25us</text>
+  <text x="72" y="216" class="mono muted" font-size="10" text-anchor="end">12us</text>
+  <text x="72" y="276" class="mono muted" font-size="10" text-anchor="end">5us</text>
+  <text x="72" y="336" class="mono muted" font-size="10" text-anchor="end">0us</text>
+
+  <!-- HKDF: ~1us -->
+  <rect x="125" y="335" width="55" height="5" class="bar-fast"/>
+  <!-- Key Gen: ~8.8us -->
+  <rect x="205" y="294" width="55" height="46" class="bar-fast"/>
+  <!-- Sign: ~9.2us -->
+  <rect x="285" y="291" width="55" height="49" class="bar-fast"/>
+  <!-- Receipt Sign: ~11.6us -->
+  <rect x="365" y="281" width="55" height="59" class="bar-mid"/>
+  <!-- Verify: ~19.3us -->
+  <rect x="445" y="242" width="55" height="98" class="bar-mid"/>
+  <!-- Trust Verify: ~21.8us -->
+  <rect x="525" y="229" width="55" height="111" class="bar-mid"/>
+  <!-- Chain 2: ~43.5us -->
+  <rect x="605" y="119" width="55" height="221" class="bar-slow"/>
+  <!-- Chain 10: ~124us (capped at chart height) -->
+  <rect x="685" y="86" width="55" height="254" class="bar-slow"/>
+
+  <text x="152" y="360" class="mono ink" font-size="9" text-anchor="middle" letter-spacing="0.5">HKDF</text>
+  <text x="232" y="360" class="mono ink" font-size="9" text-anchor="middle" letter-spacing="0.5">KEYGEN</text>
+  <text x="312" y="360" class="mono ink" font-size="9" text-anchor="middle" letter-spacing="0.5">SIGN</text>
+  <text x="392" y="360" class="mono ink" font-size="9" text-anchor="middle" letter-spacing="0.5">RECEIPT</text>
+  <text x="472" y="360" class="mono ink" font-size="9" text-anchor="middle" letter-spacing="0.5">VERIFY</text>
+  <text x="552" y="360" class="mono ink" font-size="9" text-anchor="middle" letter-spacing="0.5">TRUST</text>
+  <text x="632" y="360" class="mono ink" font-size="9" text-anchor="middle" letter-spacing="0.5">CHAIN-2</text>
+  <text x="712" y="360" class="mono ink" font-size="9" text-anchor="middle" letter-spacing="0.5">CHAIN-10</text>
+
+  <text x="44" y="377" class="mono muted" font-size="11" letter-spacing="1.5">FAST PATH: MICROSECOND SIGNING | CHAIN VERIFY SCALES LINEARLY</text>
+  <line x1="44" y1="384" x2="776" y2="384" stroke="#1f1f1f"/>
+  <text x="44" y="398" class="mono ink" font-size="12" letter-spacing="1.2">REFERENCE: CRITERION RUNS ON APPLE M4 PRO, RUST RELEASE MODE</text>
+  <circle cx="776" cy="394" r="4" class="accent"/>
+</svg>
