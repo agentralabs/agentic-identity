@@ -4691,6 +4691,7 @@ mod tests {
     }
 
     /// Helper: extract trust ID (atrust_...) from trust_grant response text.
+    #[allow(dead_code)]
     fn extract_trust_id(text: &str) -> String {
         text.lines()
             .find(|l| l.contains("atrust_"))
@@ -4700,6 +4701,7 @@ mod tests {
     }
 
     /// Helper: extract receipt ID (arec_...) from action_sign response text.
+    #[allow(dead_code)]
     fn extract_receipt_id(text: &str) -> String {
         text.lines()
             .find(|l| l.contains("arec_"))
@@ -5070,7 +5072,7 @@ mod tests {
     #[test]
     fn test_v2_evidence_max_results() {
         init();
-        let (mut server, _tmp, identity_id) = setup_identity();
+        let (mut server, _tmp, _identity_id) = setup_identity();
 
         // Create multiple grants that all match "deploy".
         for i in 0..5 {
@@ -5377,7 +5379,7 @@ mod tests {
     fn test_v2_workspace_query_single() {
         init();
         let (mut server, _tmp, identity_id) = setup_identity();
-        let ctx_tmp = tempfile::tempdir().unwrap();
+        let _ctx_tmp = tempfile::tempdir().unwrap();
 
         // Set up a context directory that uses the server's trust dir.
         // We need grants in a context directory. Use the server's own directories.
@@ -5736,8 +5738,8 @@ mod tests {
         assert!(is_ok(&resp));
         assert!(!is_tool_error(&resp));
         let j = tool_json(&resp);
-        assert!(j["present_in"].as_array().unwrap().len() >= 1);
-        assert!(j["absent_from"].as_array().unwrap().len() >= 1);
+        assert!(!j["present_in"].as_array().unwrap().is_empty());
+        assert!(!j["absent_from"].as_array().unwrap().is_empty());
         assert!(
             j["coverage"].as_str().unwrap().contains("/"),
             "Coverage should be in N/M format"
@@ -5965,8 +5967,8 @@ mod tests {
         assert!(is_ok(&cmp_resp));
         let j = tool_json(&cmp_resp);
         // full-agent should be found_in, limited-agent (empty dir) should be missing_from.
-        assert!(j["found_in"].as_array().unwrap().len() >= 1);
-        assert!(j["missing_from"].as_array().unwrap().len() >= 1);
+        assert!(!j["found_in"].as_array().unwrap().is_empty());
+        assert!(!j["missing_from"].as_array().unwrap().is_empty());
     }
 
     #[test]
@@ -6212,8 +6214,8 @@ mod tests {
             }
         }));
         let cj = tool_json(&cmp_resp);
-        assert!(cj["found_in"].as_array().unwrap().len() >= 1);
-        assert!(cj["missing_from"].as_array().unwrap().len() >= 1);
+        assert!(!cj["found_in"].as_array().unwrap().is_empty());
+        assert!(!cj["missing_from"].as_array().unwrap().is_empty());
 
         // Step 11: Cross-reference.
         let xref_resp = server.handle_request(json!({
@@ -6225,8 +6227,8 @@ mod tests {
             }
         }));
         let xj = tool_json(&xref_resp);
-        assert!(xj["present_in"].as_array().unwrap().len() >= 1);
-        assert!(xj["absent_from"].as_array().unwrap().len() >= 1);
+        assert!(!xj["present_in"].as_array().unwrap().is_empty());
+        assert!(!xj["absent_from"].as_array().unwrap().is_empty());
         assert!(xj["coverage"].as_str().unwrap().contains("/"));
     }
 }
