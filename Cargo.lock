@@ -14,7 +14,7 @@ dependencies = [
 
 [[package]]
 name = "agentic-identity"
-version = "0.2.2"
+version = "0.2.3"
 dependencies = [
  "anyhow",
  "argon2",
@@ -43,7 +43,7 @@ dependencies = [
 
 [[package]]
 name = "agentic-identity-cli"
-version = "0.2.2"
+version = "0.2.3"
 dependencies = [
  "agentic-identity",
  "anyhow",
@@ -59,7 +59,7 @@ dependencies = [
 
 [[package]]
 name = "agentic-identity-ffi"
-version = "0.2.2"
+version = "0.2.3"
 dependencies = [
  "agentic-identity",
  "libc",
@@ -69,10 +69,11 @@ dependencies = [
 
 [[package]]
 name = "agentic-identity-mcp"
-version = "0.2.2"
+version = "0.2.3"
 dependencies = [
  "agentic-identity",
  "anyhow",
+ "clap",
  "serde",
  "serde_json",
  "tempfile",

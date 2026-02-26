@@ -19,12 +19,13 @@
 use std::io::{self, BufRead, Write};
 use std::path::PathBuf;
 
+use clap::{Parser, Subcommand};
 use serde_json::{json, Value};
 
 use agentic_identity::receipt::receipt::ReceiptBuilder;
 use agentic_identity::receipt::verify::verify_receipt;
 use agentic_identity::storage::{
-    load_identity, read_public_document, save_identity, ReceiptStore, TrustStore,
+    load_identity, read_public_document, save_identity, ReceiptStore, SpawnStore, TrustStore,
 };
 use agentic_identity::trust::grant::TrustGrantBuilder;
 use agentic_identity::trust::revocation::{Revocation, RevocationReason};
@@ -45,6 +46,23 @@ const DEFAULT_IDENTITY: &str = "default";
 /// MCP protocol version supported.
 const PROTOCOL_VERSION: &str = "2024-11-05";
 
+#[derive(Parser, Debug)]
+#[command(
+    name = "agentic-identity-mcp",
+    about = "MCP server for AgenticIdentity — expose identity operations to AI agents",
+    version
+)]
+struct Cli {
+    #[command(subcommand)]
+    command: Option<Command>,
+}
+
+#[derive(Subcommand, Debug)]
+enum Command {
+    /// Run MCP server over stdio (default).
+    Serve,
+}
+
 // ── Directory helpers ─────────────────────────────────────────────────────────
 
 fn agentic_dir() -> PathBuf {
@@ -62,6 +80,10 @@ fn receipt_dir() -> PathBuf {
 
 fn trust_dir() -> PathBuf {
     agentic_dir().join("trust")
+}
+
+fn spawn_dir() -> PathBuf {
+    agentic_dir().join("spawn")
 }
 
 // ── Time formatting ───────────────────────────────────────────────────────────
@@ -216,6 +238,7 @@ struct McpServer {
     identity_dir: PathBuf,
     receipt_dir: PathBuf,
     trust_dir: PathBuf,
+    spawn_dir: PathBuf,
     /// Log of identity operations with context for this session.
     operation_log: Vec<IdentityOperationRecord>,
     /// Timestamp when this session started.
@@ -237,6 +260,7 @@ impl McpServer {
             identity_dir: identity_dir(),
             receipt_dir: receipt_dir(),
             trust_dir: trust_dir(),
+            spawn_dir: spawn_dir(),
             operation_log: Vec::new(),
             session_start_time: None,
             workspace_manager: IdentityWorkspaceManager::new(),
@@ -2212,6 +2236,11 @@ impl McpServer {
                     let _ = store.save(&receipt);
                 }
 
+                // Save spawn record for terminate/list/lineage
+                if let Ok(store) = SpawnStore::new(&self.spawn_dir) {
+                    let _ = store.save(&record);
+                }
+
                 let caps: Vec<&str> = record
                     .authority_granted
                     .iter()
@@ -2230,20 +2259,147 @@ impl McpServer {
 
     // ── Tool: spawn_terminate ─────────────────────────────────────────────────
 
-    fn tool_spawn_terminate(&self, id: Value, _args: &Value) -> Value {
-        tool_ok(
-            id,
-            "Spawn termination not yet implemented (requires spawn record storage)".to_string(),
-        )
+    fn tool_spawn_terminate(&self, id: Value, args: &Value) -> Value {
+        let spawn_id_str = match args.get("spawn_id").and_then(|v| v.as_str()) {
+            Some(s) => s,
+            None => return tool_error(id, "spawn_id is required"),
+        };
+        let reason = args
+            .get("reason")
+            .and_then(|v| v.as_str())
+            .unwrap_or("terminated");
+        let cascade = args
+            .get("cascade")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+        let parent_name = args
+            .get("identity")
+            .and_then(|v| v.as_str())
+            .unwrap_or(DEFAULT_IDENTITY);
+
+        // Load parent identity
+        let parent_path = self.identity_dir.join(format!("{parent_name}.aid"));
+        let parent = match load_identity(&parent_path, MCP_PASSPHRASE) {
+            Ok(a) => a,
+            Err(e) => {
+                return tool_error(id, format!("failed to load identity '{parent_name}': {e}"))
+            }
+        };
+
+        // Open spawn store
+        let store = match SpawnStore::new(&self.spawn_dir) {
+            Ok(s) => s,
+            Err(e) => return tool_error(id, format!("failed to open spawn store: {e}")),
+        };
+
+        // Load the target spawn record
+        let spawn_id = agentic_identity::spawn::SpawnId(spawn_id_str.to_string());
+        let mut record = match store.load(&spawn_id) {
+            Ok(r) => r,
+            Err(e) => {
+                return tool_error(id, format!("failed to load spawn record '{spawn_id}': {e}"))
+            }
+        };
+
+        if record.terminated {
+            return tool_error(id, format!("spawn {} is already terminated", spawn_id));
+        }
+
+        // Load all records for cascade
+        let mut all_records = match store.load_all() {
+            Ok(r) => r,
+            Err(e) => return tool_error(id, format!("failed to load spawn records: {e}")),
+        };
+
+        // Terminate using the engine
+        match agentic_identity::spawn::terminate_spawn(
+            &parent,
+            &mut record,
+            reason,
+            cascade,
+            &mut all_records,
+        ) {
+            Ok((receipt, terminated_ids)) => {
+                // Persist updated record
+                if let Err(e) = store.save(&record) {
+                    return tool_error(id, format!("failed to save terminated spawn record: {e}"));
+                }
+
+                // Persist cascade-terminated records
+                if cascade {
+                    for rec in &all_records {
+                        if rec.terminated && terminated_ids.iter().any(|tid| tid.0 == rec.id.0) {
+                            let _ = store.save(rec);
+                        }
+                    }
+                }
+
+                // Save termination receipt
+                if let Ok(rstore) = ReceiptStore::new(&self.receipt_dir) {
+                    let _ = rstore.save(&receipt);
+                }
+
+                let out = format!(
+                    "Spawn terminated\n  Spawn ID: {}\n  Child ID: {}\n  Reason: {}\n  Cascade: {}\n  Records terminated: {}\n  Receipt: {}",
+                    record.id,
+                    record.child_id,
+                    record.termination_reason.as_deref().unwrap_or("unknown"),
+                    cascade,
+                    terminated_ids.len(),
+                    receipt.id
+                );
+                tool_ok(id, out)
+            }
+            Err(e) => tool_error(id, format!("termination failed: {e}")),
+        }
     }
 
     // ── Tool: spawn_list ──────────────────────────────────────────────────────
 
-    fn tool_spawn_list(&self, id: Value, _args: &Value) -> Value {
-        tool_ok(
-            id,
-            "No spawned identities found (use spawn_create to spawn a child)".to_string(),
-        )
+    fn tool_spawn_list(&self, id: Value, args: &Value) -> Value {
+        let active_only = args
+            .get("active_only")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+
+        let store = match SpawnStore::new(&self.spawn_dir) {
+            Ok(s) => s,
+            Err(e) => return tool_error(id, format!("failed to open spawn store: {e}")),
+        };
+
+        let records = match store.load_all() {
+            Ok(r) => r,
+            Err(e) => return tool_error(id, format!("failed to load spawn records: {e}")),
+        };
+
+        let filtered: Vec<&agentic_identity::spawn::SpawnRecord> = if active_only {
+            records.iter().filter(|r| !r.terminated).collect()
+        } else {
+            records.iter().collect()
+        };
+
+        if filtered.is_empty() {
+            return tool_ok(
+                id,
+                "No spawned identities found (use spawn_create to spawn a child)".to_string(),
+            );
+        }
+
+        let mut lines = Vec::new();
+        lines.push(format!("Spawned identities ({}):", filtered.len()));
+        for r in &filtered {
+            let status = if r.terminated { "terminated" } else { "active" };
+            let caps: Vec<&str> = r.authority_granted.iter().map(|c| c.uri.as_str()).collect();
+            lines.push(format!(
+                "  {} [{}] {} — {} ({})",
+                r.id,
+                r.spawn_type.as_tag(),
+                status,
+                r.spawn_purpose,
+                caps.join(", ")
+            ));
+        }
+        tool_ok(id, lines.join("\n"))
     }
 
     // ── Tool: spawn_lineage ───────────────────────────────────────────────────
@@ -2253,11 +2409,69 @@ impl McpServer {
             .get("identity")
             .and_then(|v| v.as_str())
             .unwrap_or(DEFAULT_IDENTITY);
-        let out = format!(
-            "Lineage for identity '{}'\n  Root (no spawn record — this is a root identity)\n  Depth: 0\n  Authority: * (full)",
-            name
-        );
-        tool_ok(id, out)
+
+        // Load all spawn records
+        let store = match SpawnStore::new(&self.spawn_dir) {
+            Ok(s) => s,
+            Err(_) => {
+                // No spawn store means root identity
+                let out = format!(
+                    "Lineage for identity '{}'\n  Root (no spawn record — this is a root identity)\n  Depth: 0\n  Authority: * (full)",
+                    name
+                );
+                return tool_ok(id, out);
+            }
+        };
+
+        let records = store.load_all().unwrap_or_default();
+
+        // Load the identity to get its ID
+        let path = self.identity_dir.join(format!("{name}.aid"));
+        let anchor = match load_identity(&path, MCP_PASSPHRASE) {
+            Ok(a) => a,
+            Err(e) => return tool_error(id, format!("failed to load identity '{name}': {e}")),
+        };
+
+        let identity_id = anchor.id();
+
+        // Check if this identity appears as a child in any spawn record
+        let as_child = records.iter().find(|r| r.child_id == identity_id);
+
+        match as_child {
+            None => {
+                // Root identity
+                let out = format!(
+                    "Lineage for identity '{}'\n  Root (no spawn record — this is a root identity)\n  Depth: 0\n  Authority: * (full)",
+                    name
+                );
+                tool_ok(id, out)
+            }
+            Some(record) => {
+                let ancestors = agentic_identity::spawn::get_ancestors(&identity_id, &records)
+                    .unwrap_or_default();
+                let authority =
+                    agentic_identity::spawn::get_effective_authority(&identity_id, &records)
+                        .unwrap_or_default();
+                let caps: Vec<&str> = authority.iter().map(|c| c.uri.as_str()).collect();
+                let status = if record.terminated {
+                    "TERMINATED"
+                } else {
+                    "active"
+                };
+
+                let out = format!(
+                    "Lineage for identity '{}'\n  Status: {}\n  Parent: {}\n  Spawn ID: {}\n  Type: {}\n  Depth: {}\n  Authority: {}",
+                    name,
+                    status,
+                    record.parent_id,
+                    record.id,
+                    record.spawn_type.as_tag(),
+                    ancestors.len(),
+                    caps.join(", ")
+                );
+                tool_ok(id, out)
+            }
+        }
     }
 
     // ── Tool: spawn_authority ─────────────────────────────────────────────────
@@ -2267,10 +2481,33 @@ impl McpServer {
             .get("identity")
             .and_then(|v| v.as_str())
             .unwrap_or(DEFAULT_IDENTITY);
-        let out = format!(
-            "Effective authority for identity '{}'\n  * (root identity — full authority)",
-            name
-        );
+
+        // Load the identity
+        let path = self.identity_dir.join(format!("{name}.aid"));
+        let anchor = match load_identity(&path, MCP_PASSPHRASE) {
+            Ok(a) => a,
+            Err(e) => return tool_error(id, format!("failed to load identity '{name}': {e}")),
+        };
+
+        let identity_id = anchor.id();
+        let records = SpawnStore::new(&self.spawn_dir)
+            .ok()
+            .and_then(|s| s.load_all().ok())
+            .unwrap_or_default();
+
+        let authority = agentic_identity::spawn::get_effective_authority(&identity_id, &records)
+            .unwrap_or_default();
+
+        let caps: Vec<&str> = authority.iter().map(|c| c.uri.as_str()).collect();
+        let label = if caps.len() == 1 && caps[0] == "*" {
+            format!("{} (root identity — full authority)", caps.join(", "))
+        } else if caps.is_empty() {
+            "none (terminated or expired)".to_string()
+        } else {
+            caps.join(", ")
+        };
+
+        let out = format!("Effective authority for identity '{}'\n  {}", name, label);
         tool_ok(id, out)
     }
 
@@ -3445,7 +3682,7 @@ fn parse_duration_to_micros(s: &str) -> Result<u64, String> {
 
 // ── main ──────────────────────────────────────────────────────────────────────
 
-fn main() {
+fn run_stdio_server() {
     // Log to stderr (stdout is reserved for JSON-RPC responses).
     // Use a minimal subscriber without the env-filter feature (not enabled in workspace).
     tracing_subscriber::fmt()
@@ -3507,6 +3744,13 @@ fn main() {
     }
 }
 
+fn main() {
+    let cli = Cli::parse();
+    match cli.command.unwrap_or(Command::Serve) {
+        Command::Serve => run_stdio_server(),
+    }
+}
+
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
@@ -3530,6 +3774,7 @@ mod tests {
             identity_dir: tmp.path().join("identity"),
             receipt_dir: tmp.path().join("receipts"),
             trust_dir: tmp.path().join("trust"),
+            spawn_dir: tmp.path().join("spawn"),
             operation_log: Vec::new(),
             session_start_time: None,
             workspace_manager: IdentityWorkspaceManager::new(),

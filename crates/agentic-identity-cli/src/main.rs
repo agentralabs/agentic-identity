@@ -308,8 +308,8 @@ enum Commands {
     },
 
     /// Display identity information
-    #[command(alias = "info")]
-    Show {
+    #[command(alias = "show")]
+    Info {
         /// Identity name to show (overrides --identity)
         #[arg(long)]
         identity: Option<String>,
@@ -762,7 +762,7 @@ fn main() {
 
     let result = match cli.command {
         Commands::Init { name } => cmd_init(name, verbose),
-        Commands::Show { identity } => {
+        Commands::Info { identity } => {
             let name = identity.unwrap_or(identity_name);
             cmd_show(&name, verbose)
         }
