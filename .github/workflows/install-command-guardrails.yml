@@ -1,14 +1,37 @@
 name: Install Command Guardrails
 
 on:
+  push:
+    paths:
+      - "README.md"
+      - "INSTALL.md"
+      - "install.sh"
+      - "scripts/install.sh"
+      - "scripts/check-install-commands.sh"
+      - "docs/**"
+      - "src/**"
+      - "crates/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - ".github/workflows/install-command-guardrails.yml"
   pull_request:
-    branches: [main]
+    paths:
+      - "README.md"
+      - "INSTALL.md"
+      - "install.sh"
+      - "scripts/install.sh"
+      - "scripts/check-install-commands.sh"
+      - "docs/**"
+      - "src/**"
+      - "crates/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - ".github/workflows/install-command-guardrails.yml"
 
 jobs:
-  check-install-commands:
-    name: Verify Install Commands
+  validate-install-surface:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Run install command checks
-        run: bash scripts/check-install-commands.sh
+      - name: Run install guardrails
+        run: ./scripts/check-install-commands.sh

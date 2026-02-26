@@ -69,3 +69,13 @@ jobs:
           if [ -f scripts/check-canonical-sister.sh ]; then
             bash scripts/check-canonical-sister.sh
           fi
+      - name: Check runtime hardening
+        run: |
+          if [ -f scripts/check-runtime-hardening.sh ]; then
+            bash scripts/check-runtime-hardening.sh
+          fi
+      - name: Run primary-problem regression
+        run: |
+          if [ -f scripts/test-primary-problems.sh ]; then
+            bash scripts/test-primary-problems.sh
+          fi

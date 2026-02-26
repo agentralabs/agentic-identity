@@ -3,10 +3,18 @@
 ## Quick Install (Recommended)
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/agentralabs/agentic-identity/main/install.sh | bash
+curl -fsSL https://agentralabs.tech/install/identity | bash
 ```
 
 This installs the `aid` CLI and `agentic-identity-mcp` server.
+
+## Install Profiles
+
+```bash
+curl -fsSL https://agentralabs.tech/install/identity/desktop | bash
+curl -fsSL https://agentralabs.tech/install/identity/terminal | bash
+curl -fsSL https://agentralabs.tech/install/identity/server | bash
+```
 
 ## From crates.io
 

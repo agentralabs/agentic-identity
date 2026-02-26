@@ -48,7 +48,6 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Build
         run: cargo build --release --target ${{ matrix.target }} --package agentic-identity-cli --package agentic-identity-mcp
-        continue-on-error: ${{ contains(matrix.target, 'aarch64-unknown-linux') }}
       - name: Package
         run: |
           mkdir -p dist
@@ -67,20 +66,45 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
-      - name: Publish agentic-identity
+      - name: Publish crates in canonical order
+        shell: bash
         run: |
-          cargo publish --package agentic-identity --token ${{ secrets.CARGO_REGISTRY_TOKEN }} || {
-            if echo "$?" | grep -q "already"; then
-              echo "Already published — treating as success"
-            else
-              exit 1
-            fi
+          set -euo pipefail
+
+          publish_crate() {
+            local pkg="$1"
+            local retries="${2:-12}"
+            local attempt
+            local output
+
+            for attempt in $(seq 1 "$retries"); do
+              echo "Publish attempt ${attempt}/${retries} for ${pkg}..."
+              if output="$(cargo publish -p "${pkg}" --token "${{ secrets.CARGO_REGISTRY_TOKEN }}" 2>&1)"; then
+                echo "$output"
+                return 0
+              fi
+
+              echo "$output"
+              if echo "$output" | grep -Eqi "already uploaded|already exists on crates\\.io index"; then
+                echo "${pkg} already published for this version; continuing."
+                return 0
+              fi
+              if echo "$output" | grep -Eqi "failed to select a version for the requirement|no matching package named|could not find .* in registry"; then
+                echo "Dependency index propagation not ready yet; waiting before retry..."
+                sleep 20
+                continue
+              fi
+              return 1
+            done
+
+            echo "Timed out waiting for crates.io index propagation for ${pkg}."
+            return 1
           }
-        continue-on-error: true
-      - name: Publish agentic-identity-cli
-        run: cargo publish --package agentic-identity-cli --token ${{ secrets.CARGO_REGISTRY_TOKEN }} || true
-      - name: Publish agentic-identity-mcp
-        run: cargo publish --package agentic-identity-mcp --token ${{ secrets.CARGO_REGISTRY_TOKEN }} || true
+
+          publish_crate "agentic-identity"
+          publish_crate "agentic-identity-ffi"
+          publish_crate "agentic-identity-mcp"
+          publish_crate "agentic-identity-cli"
 
   github-release:
     name: GitHub Release
