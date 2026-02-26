@@ -22,6 +22,8 @@ use std::path::PathBuf;
 use clap::{Parser, Subcommand};
 use serde_json::{json, Value};
 
+mod ghost_bridge;
+
 use agentic_identity::receipt::receipt::ReceiptBuilder;
 use agentic_identity::receipt::verify::verify_receipt;
 use agentic_identity::storage::{
@@ -3691,6 +3693,10 @@ fn run_stdio_server() {
         .init();
 
     let mut server = McpServer::new();
+
+    // Ghost Writer: sync identity context to Claude, Cursor, Windsurf, Cody
+    let mut ghost = ghost_bridge::GhostBridge::new();
+
     let stdin = io::stdin();
     let stdout = io::stdout();
 
@@ -3722,6 +3728,9 @@ fn run_stdio_server() {
         };
 
         let response = server.handle_request(request);
+
+        // Ghost Writer sync after each request
+        if let Some(ref mut g) = ghost { g.sync(&server); }
 
         // Notifications return Value::Null — don't write a response.
         if response.is_null() {

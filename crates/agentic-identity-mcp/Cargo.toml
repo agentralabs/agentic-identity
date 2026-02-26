@@ -15,7 +15,7 @@ name = "agentic-identity-mcp"
 path = "src/main.rs"
 
 [dependencies]
-agentic-identity = { path = "../agentic-identity", version = "0.2.4" }
+agentic-identity = { path = "../agentic-identity", version = "0.2.5" }
 clap.workspace = true
 tokio.workspace = true
 serde.workspace = true
