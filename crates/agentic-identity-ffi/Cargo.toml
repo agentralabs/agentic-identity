@@ -14,7 +14,7 @@ categories = ["api-bindings", "cryptography"]
 crate-type = ["cdylib", "staticlib"]
 
 [dependencies]
-agentic-identity = { path = "../agentic-identity", version = "0.2.5" }
+agentic-identity = { path = "../agentic-identity", version = "0.2.6" }
 libc = "0.2"
 serde_json = { workspace = true }
 

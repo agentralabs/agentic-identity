@@ -16,7 +16,7 @@
 //! MCP server is designed for use in automated contexts where the identity file
 //! is already protected by the host environment.
 
-use std::io::{self, BufRead, Write};
+use std::io::{self, BufRead, Read, Write};
 use std::path::PathBuf;
 
 use clap::{Parser, Subcommand};
@@ -272,6 +272,18 @@ impl McpServer {
     /// Route a JSON-RPC request to the appropriate handler.
     fn handle_request(&mut self, request: Value) -> Value {
         let id = request.get("id").cloned().unwrap_or(Value::Null);
+
+        // ── JSON-RPC version validation ──────────────────────────────────
+        if let Some(version) = request.get("jsonrpc").and_then(|v| v.as_str()) {
+            if version != "2.0" {
+                return rpc_error(
+                    id,
+                    -32600,
+                    format!("Expected jsonrpc version \"2.0\", got \"{version}\""),
+                );
+            }
+        }
+
         let method = match request.get("method").and_then(|m| m.as_str()) {
             Some(m) => m.to_string(),
             None => return rpc_error(id, -32600, "missing method"),
@@ -3684,6 +3696,9 @@ fn parse_duration_to_micros(s: &str) -> Result<u64, String> {
 
 // ── main ──────────────────────────────────────────────────────────────────────
 
+/// Hard limit for framed stdio payloads (8 MiB).
+const MAX_CONTENT_LENGTH_BYTES: usize = 8 * 1024 * 1024;
+
 fn run_stdio_server() {
     // Log to stderr (stdout is reserved for JSON-RPC responses).
     // Use a minimal subscriber without the env-filter feature (not enabled in workspace).
@@ -3699,58 +3714,156 @@ fn run_stdio_server() {
 
     let stdin = io::stdin();
     let stdout = io::stdout();
+    let mut reader = io::BufReader::new(stdin.lock());
+    let mut framed_output = false;
 
-    for line in stdin.lock().lines() {
-        let line = match line {
-            Ok(l) => l,
+    loop {
+        let mut line = String::new();
+        let bytes_read = match reader.read_line(&mut line) {
+            Ok(n) => n,
             Err(e) => {
                 eprintln!("stdin read error: {e}");
                 break;
             }
         };
 
+        if bytes_read == 0 {
+            tracing::info!("EOF on stdin, shutting down");
+            break;
+        }
+
         let trimmed = line.trim();
         if trimmed.is_empty() {
             continue;
         }
 
+        // ── Content-Length framing support ────────────────────────────────
+        let lower = trimmed.to_ascii_lowercase();
+        if lower.starts_with("content-length:") {
+            let rest = trimmed.split_once(':').map(|(_, rhs)| rhs).unwrap_or("");
+            match rest.trim().parse::<usize>() {
+                Ok(n) if n <= MAX_CONTENT_LENGTH_BYTES => {
+                    // Read until blank separator line
+                    loop {
+                        let mut header_line = String::new();
+                        match reader.read_line(&mut header_line) {
+                            Ok(0) => break,
+                            Ok(_) if header_line.trim().is_empty() => break,
+                            Ok(_) => continue, // skip other headers
+                            Err(_) => break,
+                        }
+                    }
+                    // Read exact payload
+                    let mut body = vec![0u8; n];
+                    if let Err(e) = reader.read_exact(&mut body) {
+                        eprintln!("failed to read framed body: {e}");
+                        break;
+                    }
+                    let payload = String::from_utf8_lossy(&body).to_string();
+                    framed_output = true;
+
+                    match serde_json::from_str::<Value>(&payload) {
+                        Ok(request) => {
+                            let response = process_request(&mut server, &mut ghost, request);
+                            if let Some(resp) = response {
+                                write_response_framed(&stdout, &resp, framed_output);
+                            }
+                        }
+                        Err(e) => {
+                            let err = rpc_error(Value::Null, -32700, format!("parse error: {e}"));
+                            write_response_framed(&stdout, &err, framed_output);
+                        }
+                    }
+                    continue;
+                }
+                Ok(n) => {
+                    tracing::warn!(
+                        "Content-Length {n} exceeds max frame size of {MAX_CONTENT_LENGTH_BYTES} bytes"
+                    );
+                    let err = rpc_error(
+                        Value::Null,
+                        -32700,
+                        format!("Content-Length exceeds max frame size ({MAX_CONTENT_LENGTH_BYTES} bytes)"),
+                    );
+                    write_response_framed(&stdout, &err, framed_output);
+                    continue;
+                }
+                Err(_) => {
+                    tracing::warn!("Invalid Content-Length header: {trimmed}");
+                    let err = rpc_error(
+                        Value::Null,
+                        -32700,
+                        "Invalid Content-Length header".to_string(),
+                    );
+                    write_response_framed(&stdout, &err, framed_output);
+                    continue;
+                }
+            }
+        }
+
+        // ── Unframed line-based fallback ─────────────────────────────────
         let request: Value = match serde_json::from_str(trimmed) {
             Ok(v) => v,
             Err(e) => {
-                // Emit a parse error response with null id.
                 let err = rpc_error(Value::Null, -32700, format!("parse error: {e}"));
-                let mut out = stdout.lock();
-                let _ = serde_json::to_writer(&mut out, &err);
-                let _ = out.write_all(b"\n");
-                let _ = out.flush();
+                write_response_framed(&stdout, &err, framed_output);
                 continue;
             }
         };
 
-        let response = server.handle_request(request);
-
-        // Ghost Writer sync after each request
-        if let Some(ref mut g) = ghost { g.sync(&server); }
-
-        // Notifications return Value::Null — don't write a response.
-        if response.is_null() {
-            continue;
-        }
-
-        let mut out = stdout.lock();
-        if let Err(e) = serde_json::to_writer(&mut out, &response) {
-            eprintln!("failed to write response: {e}");
-            break;
-        }
-        if let Err(e) = out.write_all(b"\n") {
-            eprintln!("failed to write newline: {e}");
-            break;
-        }
-        if let Err(e) = out.flush() {
-            eprintln!("failed to flush stdout: {e}");
-            break;
+        let response = process_request(&mut server, &mut ghost, request);
+        if let Some(resp) = response {
+            write_response_framed(&stdout, &resp, framed_output);
         }
     }
+}
+
+/// Process a single JSON-RPC request through the server and ghost writer.
+fn process_request(
+    server: &mut McpServer,
+    ghost: &mut Option<ghost_bridge::GhostBridge>,
+    request: Value,
+) -> Option<Value> {
+    let response = server.handle_request(request);
+
+    // Ghost Writer sync after each request
+    if let Some(ref mut g) = ghost {
+        g.sync(server);
+    }
+
+    // Notifications return Value::Null — don't write a response.
+    if response.is_null() {
+        None
+    } else {
+        Some(response)
+    }
+}
+
+/// Write a JSON-RPC response, using Content-Length framing if the client sent framed input.
+fn write_response_framed(stdout: &io::Stdout, response: &Value, framed: bool) {
+    let mut out = stdout.lock();
+
+    if framed {
+        let json = match serde_json::to_string(response) {
+            Ok(j) => j,
+            Err(e) => {
+                eprintln!("failed to serialize response: {e}");
+                return;
+            }
+        };
+        let header = format!("Content-Length: {}\r\n\r\n", json.len());
+        let _ = out.write_all(header.as_bytes());
+        let _ = out.write_all(json.as_bytes());
+        let _ = out.flush();
+        return;
+    }
+
+    if let Err(e) = serde_json::to_writer(&mut out, response) {
+        eprintln!("failed to write response: {e}");
+        return;
+    }
+    let _ = out.write_all(b"\n");
+    let _ = out.flush();
 }
 
 fn main() {
