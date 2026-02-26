@@ -121,6 +121,30 @@ Rust core. Ed25519 + HKDF-SHA256. Real numbers from Criterion statistical benchm
 
 ---
 
+## Ghost Writer
+
+> **New in v0.2.5** -- Auto-syncs identity context to your AI coding tools.
+
+| Client | Config Location | Status |
+|:---|:---|:---|
+| **Claude Code** | `~/.claude/memory/IDENTITY_CONTEXT.md` | Full support |
+| **Cursor** | `~/.cursor/memory/agentic-identity.md` | Full support |
+| **Windsurf** | `~/.windsurf/memory/agentic-identity.md` | Full support |
+| **Cody** | `~/.sourcegraph/cody/memory/agentic-identity.md` | Full support |
+
+Syncs: active identities, recent receipts, trust grants. **Zero configuration.**
+
+## MCP Hardening
+
+> **New in v0.2.6** -- Production-grade stdio transport.
+
+- Content-Length framing with 8 MiB limit
+- JSON-RPC 2.0 validation
+- Atomic writes
+- No silent fallbacks
+
+---
+
 <a name="how-it-works"></a>
 
 ## How It Works
