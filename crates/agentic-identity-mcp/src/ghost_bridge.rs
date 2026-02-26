@@ -107,7 +107,10 @@ fn build_identity_context(server: &super::McpServer) -> String {
                     format!(" _{preview}_")
                 })
                 .unwrap_or_default();
-            md.push_str(&format!("- `{}`{} — {summary}\n", record.tool_name, intent_tag));
+            md.push_str(&format!(
+                "- `{}`{} — {summary}\n",
+                record.tool_name, intent_tag
+            ));
         }
         md.push('\n');
     }
@@ -186,10 +189,26 @@ fn detect_all_memory_dirs() -> Vec<ClientDir> {
     };
 
     let candidates = [
-        ("Claude Code", home.join(".claude").join("memory"), "IDENTITY_CONTEXT.md"),
-        ("Cursor", home.join(".cursor").join("memory"), "agentic-identity.md"),
-        ("Windsurf", home.join(".windsurf").join("memory"), "agentic-identity.md"),
-        ("Cody", home.join(".sourcegraph").join("cody").join("memory"), "agentic-identity.md"),
+        (
+            "Claude Code",
+            home.join(".claude").join("memory"),
+            "IDENTITY_CONTEXT.md",
+        ),
+        (
+            "Cursor",
+            home.join(".cursor").join("memory"),
+            "agentic-identity.md",
+        ),
+        (
+            "Windsurf",
+            home.join(".windsurf").join("memory"),
+            "agentic-identity.md",
+        ),
+        (
+            "Cody",
+            home.join(".sourcegraph").join("cody").join("memory"),
+            "agentic-identity.md",
+        ),
     ];
 
     let mut dirs = Vec::new();
