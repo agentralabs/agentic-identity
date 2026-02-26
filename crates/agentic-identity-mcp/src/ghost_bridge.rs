@@ -76,6 +76,16 @@ fn build_identity_context(server: &super::McpServer) -> String {
         "| Store | Count |\n|-------|-------|\n| Identities | {id_count} |\n| Receipts | {receipt_count} |\n| Trust Grants | {trust_count} |\n| Spawns | {spawn_count} |\n\n"
     ));
 
+    // List identity names
+    let identity_names = list_file_stems(&server.identity_dir);
+    if !identity_names.is_empty() {
+        md.push_str("## Known Identities\n\n");
+        for name in &identity_names {
+            md.push_str(&format!("- `{name}`\n"));
+        }
+        md.push('\n');
+    }
+
     // Recent operations (with intent context)
     if !server.operation_log.is_empty() {
         md.push_str("## Recent Operations\n\n");
@@ -111,6 +121,22 @@ fn count_files(dir: &Path) -> usize {
     std::fs::read_dir(dir)
         .map(|entries| entries.filter(|e| e.is_ok()).count())
         .unwrap_or(0)
+}
+
+fn list_file_stems(dir: &Path) -> Vec<String> {
+    std::fs::read_dir(dir)
+        .map(|entries| {
+            entries
+                .filter_map(|e| e.ok())
+                .filter_map(|e| {
+                    e.path()
+                        .file_stem()
+                        .and_then(|s| s.to_str())
+                        .map(|s| s.to_string())
+                })
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 fn simple_hash(s: &str) -> u64 {
