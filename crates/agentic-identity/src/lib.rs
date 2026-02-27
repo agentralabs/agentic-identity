@@ -6,8 +6,8 @@
 //! for AI agents operating via MCP.
 
 pub mod competence;
-pub mod contracts;
 pub mod continuity;
+pub mod contracts;
 pub mod crypto;
 pub mod error;
 pub mod identity;

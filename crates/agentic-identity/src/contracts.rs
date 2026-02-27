@@ -12,7 +12,7 @@ use chrono::Utc;
 
 use crate::error::IdentityError;
 use crate::identity::IdentityId;
-use crate::receipt::{ActionContent, ActionReceipt, ActionType, ReceiptId};
+use crate::receipt::{ActionReceipt, ReceiptId};
 use crate::storage::{ReceiptStore, TrustStore};
 use crate::trust::TrustGrant;
 
@@ -39,22 +39,18 @@ impl From<IdentityError> for SisterError {
                 ErrorCode::PermissionDenied,
                 format!("Trust not granted: {msg}"),
             ),
-            IdentityError::TrustRevoked(msg) => SisterError::new(
-                ErrorCode::PermissionDenied,
-                format!("Trust revoked: {msg}"),
-            ),
-            IdentityError::TrustExpired => SisterError::new(
-                ErrorCode::InvalidState,
-                "Trust expired".to_string(),
-            ),
-            IdentityError::TrustNotYetValid => SisterError::new(
-                ErrorCode::InvalidState,
-                "Trust not yet valid".to_string(),
-            ),
-            IdentityError::MaxUsesExceeded => SisterError::new(
-                ErrorCode::InvalidState,
-                "Max uses exceeded".to_string(),
-            ),
+            IdentityError::TrustRevoked(msg) => {
+                SisterError::new(ErrorCode::PermissionDenied, format!("Trust revoked: {msg}"))
+            }
+            IdentityError::TrustExpired => {
+                SisterError::new(ErrorCode::InvalidState, "Trust expired".to_string())
+            }
+            IdentityError::TrustNotYetValid => {
+                SisterError::new(ErrorCode::InvalidState, "Trust not yet valid".to_string())
+            }
+            IdentityError::MaxUsesExceeded => {
+                SisterError::new(ErrorCode::InvalidState, "Max uses exceeded".to_string())
+            }
             IdentityError::DelegationNotAllowed => SisterError::new(
                 ErrorCode::PermissionDenied,
                 "Delegation not allowed".to_string(),
@@ -63,14 +59,12 @@ impl From<IdentityError> for SisterError {
                 ErrorCode::PermissionDenied,
                 "Delegation depth exceeded".to_string(),
             ),
-            IdentityError::InvalidChain => SisterError::new(
-                ErrorCode::InvalidState,
-                "Invalid receipt chain".to_string(),
-            ),
-            IdentityError::StorageError(msg) => SisterError::new(
-                ErrorCode::StorageError,
-                format!("Storage error: {msg}"),
-            ),
+            IdentityError::InvalidChain => {
+                SisterError::new(ErrorCode::InvalidState, "Invalid receipt chain".to_string())
+            }
+            IdentityError::StorageError(msg) => {
+                SisterError::new(ErrorCode::StorageError, format!("Storage error: {msg}"))
+            }
             IdentityError::SerializationError(msg) => SisterError::new(
                 ErrorCode::StorageError,
                 format!("Serialization error: {msg}"),
@@ -79,10 +73,9 @@ impl From<IdentityError> for SisterError {
                 ErrorCode::VersionMismatch,
                 format!("Invalid file format: {msg}"),
             ),
-            IdentityError::Io(err) => SisterError::new(
-                ErrorCode::StorageError,
-                format!("IO error: {err}"),
-            ),
+            IdentityError::Io(err) => {
+                SisterError::new(ErrorCode::StorageError, format!("IO error: {err}"))
+            }
             // Competence, negative, crypto, and remaining errors → IdentityError
             _ => SisterError::new(ErrorCode::IdentityError, e.to_string()),
         }
@@ -141,10 +134,8 @@ pub struct IdentitySister {
 impl IdentitySister {
     /// Create a new IdentitySister from a storage directory path.
     fn from_storage_dir(dir: PathBuf) -> SisterResult<Self> {
-        let receipt_store = ReceiptStore::new(dir.join("receipts"))
-            .map_err(SisterError::from)?;
-        let trust_store = TrustStore::new(dir.join("trust"))
-            .map_err(SisterError::from)?;
+        let receipt_store = ReceiptStore::new(dir.join("receipts")).map_err(SisterError::from)?;
+        let trust_store = TrustStore::new(dir.join("trust")).map_err(SisterError::from)?;
 
         // Try to discover identity ID from existing .aid files
         let identity_id = Self::discover_identity(&dir);
@@ -179,14 +170,20 @@ impl IdentitySister {
     /// Get a reference to the receipt store.
     fn receipt_store(&self) -> SisterResult<&ReceiptStore> {
         self.receipt_store.as_ref().ok_or_else(|| {
-            SisterError::new(ErrorCode::InvalidState, "Receipt store not initialized".to_string())
+            SisterError::new(
+                ErrorCode::InvalidState,
+                "Receipt store not initialized".to_string(),
+            )
         })
     }
 
     /// Get a reference to the trust store.
     fn trust_store(&self) -> SisterResult<&TrustStore> {
         self.trust_store.as_ref().ok_or_else(|| {
-            SisterError::new(ErrorCode::InvalidState, "Trust store not initialized".to_string())
+            SisterError::new(
+                ErrorCode::InvalidState,
+                "Trust store not initialized".to_string(),
+            )
         })
     }
 
@@ -229,18 +226,20 @@ impl IdentitySister {
 
     /// Simple word-overlap score between a query and text.
     fn word_overlap_score(query: &str, text: &str) -> f64 {
-        let query_words: std::collections::HashSet<String> =
-            query.to_lowercase().split_whitespace()
-                .map(|w| w.trim_matches(|c: char| !c.is_alphanumeric()).to_string())
-                .filter(|w| !w.is_empty())
-                .collect();
+        let query_words: std::collections::HashSet<String> = query
+            .to_lowercase()
+            .split_whitespace()
+            .map(|w| w.trim_matches(|c: char| !c.is_alphanumeric()).to_string())
+            .filter(|w| !w.is_empty())
+            .collect();
 
         if query_words.is_empty() {
             return 0.0;
         }
 
         let text_lower = text.to_lowercase();
-        let matched = query_words.iter()
+        let matched = query_words
+            .iter()
             .filter(|w| text_lower.contains(w.as_str()))
             .count();
 
@@ -252,7 +251,8 @@ impl IdentitySister {
         chrono::DateTime::from_timestamp(
             (micros / 1_000_000) as i64,
             ((micros % 1_000_000) * 1000) as u32,
-        ).unwrap_or_else(|| Utc::now())
+        )
+        .unwrap_or_else(|| Utc::now())
     }
 }
 
@@ -290,12 +290,14 @@ impl Sister for IdentitySister {
     fn health(&self) -> HealthStatus {
         let uptime = self.started_at.elapsed();
 
-        let receipt_count = self.receipt_store()
+        let receipt_count = self
+            .receipt_store()
             .and_then(|s| s.list().map_err(SisterError::from))
             .map(|ids| ids.len())
             .unwrap_or(0);
 
-        let grant_count = self.trust_store()
+        let grant_count = self
+            .trust_store()
             .and_then(|s| s.list_granted().map_err(SisterError::from))
             .map(|ids| ids.len())
             .unwrap_or(0);
@@ -410,16 +412,18 @@ impl SessionManagement for IdentitySister {
     }
 
     fn list_sessions(&self) -> SisterResult<Vec<ContextSummary>> {
-        let mut summaries: Vec<ContextSummary> = self.sessions.iter().map(|s| {
-            ContextSummary {
+        let mut summaries: Vec<ContextSummary> = self
+            .sessions
+            .iter()
+            .map(|s| ContextSummary {
                 id: s.id,
                 name: s.name.clone(),
                 created_at: s.started_at,
                 updated_at: s.ended_at.unwrap_or(s.started_at),
                 item_count: s.receipt_ids.len(),
                 size_bytes: 0,
-            }
-        }).collect();
+            })
+            .collect();
 
         // Include current session if active
         if let Some(ref s) = self.current_session {
@@ -438,16 +442,21 @@ impl SessionManagement for IdentitySister {
 
     fn export_session(&self, session_id: ContextId) -> SisterResult<ContextSnapshot> {
         // Find the session
-        let session = self.sessions.iter()
+        let session = self
+            .sessions
+            .iter()
             .chain(self.current_session.as_ref())
             .find(|s| s.id == session_id)
             .ok_or_else(|| SisterError::not_found(format!("session {session_id}")))?;
 
         // Collect receipt data for the session
-        let receipt_data: Vec<serde_json::Value> = session.receipt_ids.iter()
+        let receipt_data: Vec<serde_json::Value> = session
+            .receipt_ids
+            .iter()
             .filter_map(|id| {
                 let receipt_id = ReceiptId(id.clone());
-                self.receipt_store().ok()
+                self.receipt_store()
+                    .ok()
                     .and_then(|store| store.load(&receipt_id).ok())
                     .and_then(|r| serde_json::to_value(&r).ok())
             })
@@ -537,7 +546,11 @@ impl Grounding for IdentitySister {
                     "receipt",
                     &receipt.id.0,
                     score,
-                    format!("[{}] {}", receipt.action_type.as_tag(), receipt.action.description),
+                    format!(
+                        "[{}] {}",
+                        receipt.action_type.as_tag(),
+                        receipt.action.description
+                    ),
                 ));
                 best_score = best_score.max(score);
             }
@@ -546,7 +559,9 @@ impl Grounding for IdentitySister {
         // Search trust grants
         let grants = self.load_all_grants()?;
         for grant in &grants {
-            let cap_text: String = grant.capabilities.iter()
+            let cap_text: String = grant
+                .capabilities
+                .iter()
                 .map(|c| c.uri.as_str())
                 .collect::<Vec<_>>()
                 .join(" ");
@@ -558,7 +573,10 @@ impl Grounding for IdentitySister {
                     "trust_grant",
                     &grant.id.0,
                     score,
-                    format!("Trust: {} -> {} [{}]", grant.grantor.0, grant.grantee.0, cap_text),
+                    format!(
+                        "Trust: {} -> {} [{}]",
+                        grant.grantor.0, grant.grantee.0, cap_text
+                    ),
                 ));
                 best_score = best_score.max(score);
             }
@@ -574,12 +592,20 @@ impl Grounding for IdentitySister {
         };
 
         // Sort evidence by score descending
-        evidence_items.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+        evidence_items.sort_by(|a, b| {
+            b.score
+                .partial_cmp(&a.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
         evidence_items.truncate(10);
 
         let reason = match status {
-            GroundingStatus::Verified => format!("Found {} supporting evidence items", evidence_items.len()),
-            GroundingStatus::Partial => format!("Found {} partially matching items", evidence_items.len()),
+            GroundingStatus::Verified => {
+                format!("Found {} supporting evidence items", evidence_items.len())
+            }
+            GroundingStatus::Partial => {
+                format!("Found {} partially matching items", evidence_items.len())
+            }
             GroundingStatus::Ungrounded => "No matching receipts or trust grants found".into(),
         };
 
@@ -605,7 +631,10 @@ impl Grounding for IdentitySister {
                 let timestamp = Self::micros_to_datetime(receipt.timestamp);
 
                 let mut data = Metadata::new();
-                data.insert("action_type".into(), serde_json::json!(receipt.action_type.as_tag()));
+                data.insert(
+                    "action_type".into(),
+                    serde_json::json!(receipt.action_type.as_tag()),
+                );
                 data.insert("actor".into(), serde_json::json!(receipt.actor.0));
 
                 details.push(EvidenceDetail {
@@ -623,7 +652,9 @@ impl Grounding for IdentitySister {
         // Search trust grants
         let grants = self.load_all_grants()?;
         for grant in &grants {
-            let cap_text: String = grant.capabilities.iter()
+            let cap_text: String = grant
+                .capabilities
+                .iter()
                 .map(|c| c.uri.as_str())
                 .collect::<Vec<_>>()
                 .join(", ");
@@ -644,13 +675,20 @@ impl Grounding for IdentitySister {
                     score,
                     created_at: timestamp,
                     source_sister: SisterType::Identity,
-                    content: format!("Trust: {} -> {} [{}]", grant.grantor.0, grant.grantee.0, cap_text),
+                    content: format!(
+                        "Trust: {} -> {} [{}]",
+                        grant.grantor.0, grant.grantee.0, cap_text
+                    ),
                     data,
                 });
             }
         }
 
-        details.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+        details.sort_by(|a, b| {
+            b.score
+                .partial_cmp(&a.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
         details.truncate(max_results);
         Ok(details)
     }
@@ -666,7 +704,11 @@ impl Grounding for IdentitySister {
                     item_type: "receipt".into(),
                     id: receipt.id.0.clone(),
                     relevance_score: score,
-                    description: format!("[{}] {}", receipt.action_type.as_tag(), receipt.action.description),
+                    description: format!(
+                        "[{}] {}",
+                        receipt.action_type.as_tag(),
+                        receipt.action.description
+                    ),
                     data: Metadata::new(),
                 });
             }
@@ -674,7 +716,9 @@ impl Grounding for IdentitySister {
 
         let grants = self.load_all_grants()?;
         for grant in &grants {
-            let cap_text: String = grant.capabilities.iter()
+            let cap_text: String = grant
+                .capabilities
+                .iter()
                 .map(|c| c.uri.as_str())
                 .collect::<Vec<_>>()
                 .join(", ");
@@ -686,14 +730,19 @@ impl Grounding for IdentitySister {
                     item_type: "trust_grant".into(),
                     id: grant.id.0.clone(),
                     relevance_score: score,
-                    description: format!("Trust: {} -> {} [{}]", grant.grantor.0, grant.grantee.0, cap_text),
+                    description: format!(
+                        "Trust: {} -> {} [{}]",
+                        grant.grantor.0, grant.grantee.0, cap_text
+                    ),
                     data: Metadata::new(),
                 });
             }
         }
 
         suggestions.sort_by(|a, b| {
-            b.relevance_score.partial_cmp(&a.relevance_score).unwrap_or(std::cmp::Ordering::Equal)
+            b.relevance_score
+                .partial_cmp(&a.relevance_score)
+                .unwrap_or(std::cmp::Ordering::Equal)
         });
         suggestions.truncate(limit);
         Ok(suggestions)
@@ -714,17 +763,20 @@ impl Queryable for IdentitySister {
                 let limit = query.limit.unwrap_or(50);
                 let offset = query.offset.unwrap_or(0);
 
-                let results: Vec<serde_json::Value> = receipts.iter()
+                let results: Vec<serde_json::Value> = receipts
+                    .iter()
                     .skip(offset)
                     .take(limit)
-                    .map(|r| serde_json::json!({
-                        "id": r.id.0,
-                        "type": "receipt",
-                        "action_type": r.action_type.as_tag(),
-                        "description": r.action.description,
-                        "actor": r.actor.0,
-                        "timestamp": r.timestamp,
-                    }))
+                    .map(|r| {
+                        serde_json::json!({
+                            "id": r.id.0,
+                            "type": "receipt",
+                            "action_type": r.action_type.as_tag(),
+                            "description": r.action.description,
+                            "actor": r.actor.0,
+                            "timestamp": r.timestamp,
+                        })
+                    })
                     .collect();
 
                 Ok(QueryResult::new(query, results, start.elapsed())
@@ -743,20 +795,25 @@ impl Queryable for IdentitySister {
                 for r in &receipts {
                     let score = Self::word_overlap_score(&query_text, &r.action.description);
                     if score > 0.2 {
-                        scored.push((score, serde_json::json!({
-                            "id": r.id.0,
-                            "type": "receipt",
-                            "action_type": r.action_type.as_tag(),
-                            "description": r.action.description,
-                            "actor": r.actor.0,
-                            "score": score,
-                        })));
+                        scored.push((
+                            score,
+                            serde_json::json!({
+                                "id": r.id.0,
+                                "type": "receipt",
+                                "action_type": r.action_type.as_tag(),
+                                "description": r.action.description,
+                                "actor": r.actor.0,
+                                "score": score,
+                            }),
+                        ));
                     }
                 }
 
                 // Search grants
                 for g in &grants {
-                    let cap_text: String = g.capabilities.iter()
+                    let cap_text: String = g
+                        .capabilities
+                        .iter()
                         .map(|c| c.uri.as_str())
                         .collect::<Vec<_>>()
                         .join(", ");
@@ -764,14 +821,17 @@ impl Queryable for IdentitySister {
                     let score = Self::word_overlap_score(&query_text, &combined);
 
                     if score > 0.2 {
-                        scored.push((score, serde_json::json!({
-                            "id": g.id.0,
-                            "type": "trust_grant",
-                            "grantor": g.grantor.0,
-                            "grantee": g.grantee.0,
-                            "capabilities": cap_text,
-                            "score": score,
-                        })));
+                        scored.push((
+                            score,
+                            serde_json::json!({
+                                "id": g.id.0,
+                                "type": "trust_grant",
+                                "grantor": g.grantor.0,
+                                "grantee": g.grantee.0,
+                                "capabilities": cap_text,
+                                "score": score,
+                            }),
+                        ));
                     }
                 }
 
@@ -790,15 +850,18 @@ impl Queryable for IdentitySister {
                 receipts.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
 
                 let total = receipts.len();
-                let results: Vec<serde_json::Value> = receipts.iter()
+                let results: Vec<serde_json::Value> = receipts
+                    .iter()
                     .take(limit)
-                    .map(|r| serde_json::json!({
-                        "id": r.id.0,
-                        "type": "receipt",
-                        "action_type": r.action_type.as_tag(),
-                        "description": r.action.description,
-                        "timestamp": r.timestamp,
-                    }))
+                    .map(|r| {
+                        serde_json::json!({
+                            "id": r.id.0,
+                            "type": "receipt",
+                            "action_type": r.action_type.as_tag(),
+                            "description": r.action.description,
+                            "timestamp": r.timestamp,
+                        })
+                    })
                     .collect();
 
                 Ok(QueryResult::new(query, results, start.elapsed())
@@ -848,8 +911,7 @@ impl Queryable for IdentitySister {
             QueryTypeInfo::new("search", "Search receipts and grants by text")
                 .required(vec!["text"]),
             QueryTypeInfo::new("recent", "Get most recent receipts"),
-            QueryTypeInfo::new("get", "Get a specific receipt by ID")
-                .required(vec!["id"]),
+            QueryTypeInfo::new("get", "Get a specific receipt by ID").required(vec!["id"]),
         ]
     }
 }
@@ -954,7 +1016,9 @@ mod tests {
     fn test_grounding_ungrounded() {
         let (sister, _dir) = test_sister();
 
-        let result = sister.ground("something completely unrelated xyz123").unwrap();
+        let result = sister
+            .ground("something completely unrelated xyz123")
+            .unwrap();
         assert_eq!(result.status, GroundingStatus::Ungrounded);
         assert_eq!(result.confidence, 0.0);
     }
