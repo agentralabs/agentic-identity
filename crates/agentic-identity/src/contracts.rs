@@ -1046,7 +1046,7 @@ mod tests {
         save_test_receipt(&sister, "Updated deployment pipeline");
 
         let result = sister.query(Query::search("deployment")).unwrap();
-        assert!(result.results.len() >= 1);
+        assert!(!result.results.is_empty());
         assert!(result.results.iter().any(|r| {
             r.get("description")
                 .and_then(|d| d.as_str())
