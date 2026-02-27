@@ -341,644 +341,644 @@ impl McpServer {
 
     fn handle_tools_list(&self, id: Value) -> Value {
         let mut tools_list = json!([
-                    {
-                        "name": "identity_create",
-                        "description": "Create a new AgenticIdentity. Uses the default MCP passphrase",
-                        "inputSchema": {
-                            "type": "object",
-                            "properties": {
-                                "name": {
-                                    "type": "string",
-                                    "description": "Human-readable name for the identity (default: \"default\")"
-                                }
-                            }
-                        }
-                    },
-                    {
-                        "name": "identity_show",
-                        "description": "Show identity information (public document, no passphrase required)",
-                        "inputSchema": {
-                            "type": "object",
-                            "properties": {
-                                "name": {
-                                    "type": "string",
-                                    "description": "Identity name (default: \"default\")"
-                                }
-                            }
-                        }
-                    },
-                    {
-                        "name": "action_sign",
-                        "description": "Sign an action and create a verifiable receipt",
-                        "inputSchema": {
-                            "type": "object",
-                            "required": ["action"],
-                            "properties": {
-                                "action": {
-                                    "type": "string",
-                                    "description": "Human-readable description of the action"
-                                },
-                                "action_type": {
-                                    "type": "string",
-                                    "description": "Action type: decision, observation, mutation, delegation, revocation, identity_operation, or custom string",
-                                    "default": "decision"
-                                },
-                                "data": {
-                                    "type": "object",
-                                    "description": "Optional structured data payload"
-                                },
-                                "chain_to": {
-                                    "type": "string",
-                                    "description": "Previous receipt ID to chain to (arec_...)"
-                                },
-                                "identity": {
-                                    "type": "string",
-                                    "description": "Identity name to sign with (default: \"default\")"
-                                }
-                            }
-                        }
-                    },
-                    {
-                        "name": "receipt_verify",
-                        "description": "Verify the cryptographic signature on a receipt",
-                        "inputSchema": {
-                            "type": "object",
-                            "required": ["receipt_id"],
-                            "properties": {
-                                "receipt_id": {
-                                    "type": "string",
-                                    "description": "Receipt ID (arec_...)"
-                                }
-                            }
-                        }
-                    },
-                    {
-                        "name": "trust_grant",
-                        "description": "Grant trust (capabilities) to another identity",
-                        "inputSchema": {
-                            "type": "object",
-                            "required": ["grantee", "capabilities"],
-                            "properties": {
-                                "grantee": {
-                                    "type": "string",
-                                    "description": "Grantee identity ID (aid_...)"
-                                },
-                                "capabilities": {
-                                    "type": "array",
-                                    "items": {"type": "string"},
-                                    "description": "Capability URIs to grant (e.g. [\"read:calendar\", \"write:notes\"])"
-                                },
-                                "expires": {
-                                    "type": "string",
-                                    "description": "Expiry duration string (e.g. \"24h\", \"7d\", \"30d\")"
-                                },
-                                "max_uses": {
-                                    "type": "integer",
-                                    "description": "Maximum number of uses (null = unlimited)"
-                                },
-                                "allow_delegation": {
-                                    "type": "boolean",
-                                    "description": "Whether the grantee can delegate trust to others",
-                                    "default": false
-                                },
-                                "identity": {
-                                    "type": "string",
-                                    "description": "Grantor identity name (default: \"default\")"
-                                }
-                            }
-                        }
-                    },
-                    {
-                        "name": "trust_revoke",
-                        "description": "Revoke a trust grant",
-                        "inputSchema": {
-                            "type": "object",
-                            "required": ["trust_id"],
-                            "properties": {
-                                "trust_id": {
-                                    "type": "string",
-                                    "description": "Trust grant ID (atrust_...)"
-                                },
-                                "reason": {
-                                    "type": "string",
-                                    "description": "Reason for revocation (manual_revocation, expired, compromised, policy_violation, grantee_request, or custom:<text>)",
-                                    "default": "manual_revocation"
-                                },
-                                "identity": {
-                                    "type": "string",
-                                    "description": "Identity name performing the revocation (default: \"default\")"
-                                }
-                            }
-                        }
-                    },
-                    {
-                        "name": "trust_verify",
-                        "description": "Verify whether a trust grant is currently valid for a capability",
-                        "inputSchema": {
-                            "type": "object",
-                            "required": ["trust_id"],
-                            "properties": {
-                                "trust_id": {
-                                    "type": "string",
-                                    "description": "Trust grant ID (atrust_...)"
-                                },
-                                "capability": {
-                                    "type": "string",
-                                    "description": "Capability URI to check (default: \"*\" checks overall validity)"
-                                }
-                            }
-                        }
-                    },
-                    {
-                        "name": "trust_list",
-                        "description": "List trust grants (granted by or received by this identity)",
-                        "inputSchema": {
-                            "type": "object",
-                            "properties": {
-                                "direction": {
-                                    "type": "string",
-                                    "enum": ["granted", "received", "both"],
-                                    "description": "Which grants to list (default: \"both\")"
-                                },
-                                "valid_only": {
-                                    "type": "boolean",
-                                    "description": "Only show non-revoked grants (default: false)"
-                                }
-                            }
-                        }
-                    },
-                    {
-                        "name": "receipt_list",
-                        "description": "List action receipts with optional filters",
-                        "inputSchema": {
-                            "type": "object",
-                            "properties": {
-                                "actor": {
-                                    "type": "string",
-                                    "description": "Filter by actor identity ID (aid_...)"
-                                },
-                                "action_type": {
-                                    "type": "string",
-                                    "description": "Filter by action type"
-                                },
-                                "limit": {
-                                    "type": "integer",
-                                    "description": "Maximum number of receipts to return (default: 20)"
-                                }
-                            }
-                        }
-                    },
-                    {
-                        "name": "identity_health",
-                        "description": "Check system health: identity files, receipt store, trust store",
-                        "inputSchema": {
-                            "type": "object",
-                            "properties": {}
-                        }
-                    },
-                    {
-                        "name": "continuity_record",
-                        "description": "Record an experience event in the continuity chain",
-                        "inputSchema": {
-                            "type": "object",
-                            "required": ["content_hash"],
-                            "properties": {
-                                "experience_type": {
-                                    "type": "string",
-                                    "description": "Experience type: perception, cognition, action, memory, learning, planning, emotion, idle, system (default: cognition)"
-                                },
-                                "content_hash": {
-                                    "type": "string",
-                                    "description": "Hash of the experience content"
-                                },
-                                "intensity": {
-                                    "type": "number",
-                                    "description": "Intensity of the experience (0.0 - 1.0, default: 0.5)"
-                                },
-                                "identity": {
-                                    "type": "string",
-                                    "description": "Identity name (default: \"default\")"
-                                }
-                            }
-                        }
-                    },
-                    {
-                        "name": "continuity_anchor",
-                        "description": "Create a continuity anchor (checkpoint) at the current state",
-                        "inputSchema": {
-                            "type": "object",
-                            "properties": {
-                                "anchor_type": {
-                                    "type": "string",
-                                    "description": "Anchor type: genesis, manual, time_based, experience_count (default: manual)"
-                                },
-                                "identity": {
-                                    "type": "string",
-                                    "description": "Identity name (default: \"default\")"
-                                }
-                            }
-                        }
-                    },
-                    {
-                        "name": "continuity_heartbeat",
-                        "description": "Create a heartbeat record indicating the agent is alive",
-                        "inputSchema": {
-                            "type": "object",
-                            "properties": {
-                                "status": {
-                                    "type": "string",
-                                    "description": "Heartbeat status: active, idle, suspended, degraded (default: active)"
-                                },
-                                "identity": {
-                                    "type": "string",
-                                    "description": "Identity name (default: \"default\")"
-                                }
-                            }
-                        }
-                    },
-                    {
-                        "name": "continuity_status",
-                        "description": "Get the continuity status for an identity",
-                        "inputSchema": {
-                            "type": "object",
-                            "properties": {
-                                "identity": {
-                                    "type": "string",
-                                    "description": "Identity name (default: \"default\")"
-                                }
-                            }
-                        }
-                    },
-                    {
-                        "name": "continuity_gaps",
-                        "description": "Detect gaps in the experience chain",
-                        "inputSchema": {
-                            "type": "object",
-                            "properties": {
-                                "grace_period_seconds": {
-                                    "type": "integer",
-                                    "description": "Grace period in seconds (gaps shorter are ignored, default: 300)"
-                                },
-                                "identity": {
-                                    "type": "string",
-                                    "description": "Identity name (default: \"default\")"
-                                }
-                            }
-                        }
-                    },
-                    {
-                        "name": "spawn_create",
-                        "description": "Spawn a child identity with bounded authority",
-                        "inputSchema": {
-                            "type": "object",
-                            "required": ["purpose", "authority"],
-                            "properties": {
-                                "spawn_type": {
-                                    "type": "string",
-                                    "description": "Spawn type: worker, delegate, clone, specialist (default: worker)"
-                                },
-                                "purpose": {
-                                    "type": "string",
-                                    "description": "Purpose of the spawned identity"
-                                },
-                                "authority": {
-                                    "type": "array",
-                                    "items": {"type": "string"},
-                                    "description": "Capability URIs to grant to the child"
-                                },
-                                "lifetime": {
-                                    "type": "string",
-                                    "description": "Lifetime: indefinite, parent_termination, or duration in seconds (default: indefinite)"
-                                },
-                                "identity": {
-                                    "type": "string",
-                                    "description": "Parent identity name (default: \"default\")"
-                                }
-                            }
-                        }
-                    },
-                    {
-                        "name": "spawn_terminate",
-                        "description": "Terminate a spawned child identity",
-                        "inputSchema": {
-                            "type": "object",
-                            "required": ["spawn_id"],
-                            "properties": {
-                                "spawn_id": {
-                                    "type": "string",
-                                    "description": "Spawn record ID (aspawn_...)"
-                                },
-                                "reason": {
-                                    "type": "string",
-                                    "description": "Reason for termination"
-                                },
-                                "cascade": {
-                                    "type": "boolean",
-                                    "description": "Whether to cascade termination to descendants (default: false)"
-                                },
-                                "identity": {
-                                    "type": "string",
-                                    "description": "Parent identity name (default: \"default\")"
-                                }
-                            }
-                        }
-                    },
-                    {
-                        "name": "spawn_list",
-                        "description": "List spawned child identities",
-                        "inputSchema": {
-                            "type": "object",
-                            "properties": {
-                                "active_only": {
-                                    "type": "boolean",
-                                    "description": "Only show active (non-terminated) spawns (default: false)"
-                                },
-                                "identity": {
-                                    "type": "string",
-                                    "description": "Parent identity name (default: \"default\")"
-                                }
-                            }
-                        }
-                    },
-                    {
-                        "name": "spawn_lineage",
-                        "description": "Get lineage information for an identity",
-                        "inputSchema": {
-                            "type": "object",
-                            "properties": {
-                                "identity": {
-                                    "type": "string",
-                                    "description": "Identity name (default: \"default\")"
-                                }
-                            }
-                        }
-                    },
-                    {
-                        "name": "spawn_authority",
-                        "description": "Get effective authority for an identity (bounded by lineage)",
-                        "inputSchema": {
-                            "type": "object",
-                            "properties": {
-                                "identity": {
-                                    "type": "string",
-                                    "description": "Identity name (default: \"default\")"
-                                }
-                            }
-                        }
-                    },
-                    {
-                        "name": "competence_record",
-                        "description": "Record a competence attempt outcome (success, failure, partial)",
-                        "inputSchema": {
-                            "type": "object",
-                            "properties": {
-                                "domain": { "type": "string", "description": "Competence domain (e.g., deploy, code_review)" },
-                                "outcome": { "type": "string", "description": "Outcome: success, failure, or partial" },
-                                "receipt_id": { "type": "string", "description": "Receipt ID linking to the action" },
-                                "reason": { "type": "string", "description": "Failure reason (for outcome=failure)" },
-                                "score": { "type": "number", "description": "Partial score 0.0-1.0 (for outcome=partial)" }
-                            },
-                            "required": ["domain", "outcome", "receipt_id"]
-                        }
-                    },
-                    {
-                        "name": "competence_show",
-                        "description": "Get competence record for a domain",
-                        "inputSchema": {
-                            "type": "object",
-                            "properties": {
-                                "domain": { "type": "string", "description": "Competence domain" }
-                            }
-                        }
-                    },
-                    {
-                        "name": "competence_prove",
-                        "description": "Generate a competence proof for a domain",
-                        "inputSchema": {
-                            "type": "object",
-                            "properties": {
-                                "domain": { "type": "string", "description": "Competence domain" },
-                                "min_rate": { "type": "number", "description": "Minimum success rate (0.0-1.0)" },
-                                "min_attempts": { "type": "integer", "description": "Minimum number of attempts" }
-                            },
-                            "required": ["domain"]
-                        }
-                    },
-                    {
-                        "name": "competence_verify",
-                        "description": "Verify a competence proof",
-                        "inputSchema": {
-                            "type": "object",
-                            "properties": {
-                                "proof_id": { "type": "string", "description": "Proof ID to verify" }
-                            },
-                            "required": ["proof_id"]
-                        }
-                    },
-                    {
-                        "name": "competence_list",
-                        "description": "List all competence domains for the identity",
-                        "inputSchema": {
-                            "type": "object",
-                            "properties": {}
-                        }
-                    },
-                    {
-                        "name": "negative_prove",
-                        "description": "Generate a negative capability proof (prove agent cannot do something)",
-                        "inputSchema": {
-                            "type": "object",
-                            "properties": {
-                                "capability": { "type": "string", "description": "Capability URI to prove impossible" }
-                            },
-                            "required": ["capability"]
-                        }
-                    },
-                    {
-                        "name": "negative_verify",
-                        "description": "Verify a negative capability proof",
-                        "inputSchema": {
-                            "type": "object",
-                            "properties": {
-                                "proof_id": { "type": "string", "description": "Negative proof ID to verify" }
-                            },
-                            "required": ["proof_id"]
-                        }
-                    },
-                    {
-                        "name": "negative_declare",
-                        "description": "Create a voluntary negative declaration (self-imposed restriction)",
-                        "inputSchema": {
-                            "type": "object",
-                            "properties": {
-                                "capabilities": { "type": "string", "description": "Comma-separated capability URIs to declare impossible" },
-                                "reason": { "type": "string", "description": "Reason for the declaration" },
-                                "permanent": { "type": "boolean", "description": "If true, cannot be undone" }
-                            },
-                            "required": ["capabilities", "reason"]
-                        }
-                    },
-                    {
-                        "name": "negative_list",
-                        "description": "List all negative declarations for the identity",
-                        "inputSchema": {
-                            "type": "object",
-                            "properties": {}
-                        }
-                    },
-                    {
-                        "name": "negative_check",
-                        "description": "Quick check if a capability is structurally impossible",
-                        "inputSchema": {
-                            "type": "object",
-                            "properties": {
-                                "capability": { "type": "string", "description": "Capability URI to check" }
-                            },
-                            "required": ["capability"]
-                        }
-                    },
-                    {
-                        "name": "action_context",
-                        "description": "Log the intent and context behind identity actions. Call this to record WHY you are performing identity operations",
-                        "inputSchema": {
-                            "type": "object",
-                            "properties": {
-                                "intent": {
-                                    "type": "string",
-                                    "description": "Why you are performing identity actions (e.g., 'establishing trust with new collaborator')"
-                                },
-                                "decision": {
-                                    "type": "string",
-                                    "description": "What was decided or concluded"
-                                },
-                                "significance": {
-                                    "type": "string",
-                                    "enum": ["routine", "important", "critical"],
-                                    "description": "How significant this action is"
-                                },
-                                "topic": {
-                                    "type": "string",
-                                    "description": "Optional topic or category (e.g., 'trust-management', 'spawn-setup')"
-                                }
-                            },
-                            "required": ["intent"]
-                        }
-                    },
-                    // ── V2: Grounding (anti-hallucination) ─────────────────────────
-                    {
-                        "name": "identity_ground",
-                        "description": "Verify an authority/action claim has backing in trust grants, receipts, or competence records. Prevents hallucination about permissions",
-                        "inputSchema": {
-                            "type": "object",
-                            "required": ["claim"],
-                            "properties": {
-                                "claim": { "type": "string", "description": "The claim to verify (e.g., 'agent has deploy permission')" },
-                                "identity": { "type": "string", "description": "Identity name (default: \"default\")" }
-                            }
-                        }
-                    },
-                    {
-                        "name": "identity_evidence",
-                        "description": "Get detailed evidence for an identity claim from trust grants, receipts, and competence records",
-                        "inputSchema": {
-                            "type": "object",
-                            "required": ["query"],
-                            "properties": {
-                                "query": { "type": "string", "description": "The query to search evidence for" },
-                                "identity": { "type": "string", "description": "Identity name (default: \"default\")" },
-                                "max_results": { "type": "integer", "default": 10 }
-                            }
-                        }
-                    },
-                    {
-                        "name": "identity_suggest",
-                        "description": "Find similar grants, receipts, or competence records when a claim doesn't match exactly",
-                        "inputSchema": {
-                            "type": "object",
-                            "required": ["query"],
-                            "properties": {
-                                "query": { "type": "string", "description": "The query to find suggestions for" },
-                                "identity": { "type": "string", "description": "Identity name (default: \"default\")" },
-                                "limit": { "type": "integer", "default": 5 }
-                            }
-                        }
-                    },
-                    // ── V2: Multi-context workspaces ──────────────────────────────
-                    {
-                        "name": "identity_workspace_create",
-                        "description": "Create a multi-identity workspace for comparing permissions across agents",
-                        "inputSchema": {
-                            "type": "object",
-                            "required": ["name"],
-                            "properties": {
-                                "name": { "type": "string", "description": "Workspace name" }
-                            }
-                        }
-                    },
-                    {
-                        "name": "identity_workspace_add",
-                        "description": "Add an identity directory to a workspace for cross-identity comparison",
-                        "inputSchema": {
-                            "type": "object",
-                            "required": ["workspace_id", "path"],
-                            "properties": {
-                                "workspace_id": { "type": "string" },
-                                "path": { "type": "string", "description": "Path to identity directory" },
-                                "role": { "type": "string", "enum": ["primary", "secondary", "reference", "archive"], "default": "primary" },
-                                "label": { "type": "string" }
-                            }
-                        }
-                    },
-                    {
-                        "name": "identity_workspace_list",
-                        "description": "List loaded identity contexts in a workspace",
-                        "inputSchema": {
-                            "type": "object",
-                            "required": ["workspace_id"],
-                            "properties": {
-                                "workspace_id": { "type": "string" }
-                            }
-                        }
-                    },
-                    {
-                        "name": "identity_workspace_query",
-                        "description": "Query across all identity contexts in a workspace",
-                        "inputSchema": {
-                            "type": "object",
-                            "required": ["workspace_id", "query"],
-                            "properties": {
-                                "workspace_id": { "type": "string" },
-                                "query": { "type": "string" },
-                                "max_per_context": { "type": "integer", "default": 10 }
-                            }
-                        }
-                    },
-                    {
-                        "name": "identity_workspace_compare",
-                        "description": "Compare permissions or capabilities across identity contexts",
-                        "inputSchema": {
-                            "type": "object",
-                            "required": ["workspace_id", "item"],
-                            "properties": {
-                                "workspace_id": { "type": "string" },
-                                "item": { "type": "string" },
-                                "max_per_context": { "type": "integer", "default": 5 }
-                            }
-                        }
-                    },
-                    {
-                        "name": "identity_workspace_xref",
-                        "description": "Cross-reference a permission across identity contexts",
-                        "inputSchema": {
-                            "type": "object",
-                            "required": ["workspace_id", "item"],
-                            "properties": {
-                                "workspace_id": { "type": "string" },
-                                "item": { "type": "string" }
-                            }
+            {
+                "name": "identity_create",
+                "description": "Create a new AgenticIdentity. Uses the default MCP passphrase",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "name": {
+                            "type": "string",
+                            "description": "Human-readable name for the identity (default: \"default\")"
                         }
                     }
-                ]);
+                }
+            },
+            {
+                "name": "identity_show",
+                "description": "Show identity information (public document, no passphrase required)",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "name": {
+                            "type": "string",
+                            "description": "Identity name (default: \"default\")"
+                        }
+                    }
+                }
+            },
+            {
+                "name": "action_sign",
+                "description": "Sign an action and create a verifiable receipt",
+                "inputSchema": {
+                    "type": "object",
+                    "required": ["action"],
+                    "properties": {
+                        "action": {
+                            "type": "string",
+                            "description": "Human-readable description of the action"
+                        },
+                        "action_type": {
+                            "type": "string",
+                            "description": "Action type: decision, observation, mutation, delegation, revocation, identity_operation, or custom string",
+                            "default": "decision"
+                        },
+                        "data": {
+                            "type": "object",
+                            "description": "Optional structured data payload"
+                        },
+                        "chain_to": {
+                            "type": "string",
+                            "description": "Previous receipt ID to chain to (arec_...)"
+                        },
+                        "identity": {
+                            "type": "string",
+                            "description": "Identity name to sign with (default: \"default\")"
+                        }
+                    }
+                }
+            },
+            {
+                "name": "receipt_verify",
+                "description": "Verify the cryptographic signature on a receipt",
+                "inputSchema": {
+                    "type": "object",
+                    "required": ["receipt_id"],
+                    "properties": {
+                        "receipt_id": {
+                            "type": "string",
+                            "description": "Receipt ID (arec_...)"
+                        }
+                    }
+                }
+            },
+            {
+                "name": "trust_grant",
+                "description": "Grant trust (capabilities) to another identity",
+                "inputSchema": {
+                    "type": "object",
+                    "required": ["grantee", "capabilities"],
+                    "properties": {
+                        "grantee": {
+                            "type": "string",
+                            "description": "Grantee identity ID (aid_...)"
+                        },
+                        "capabilities": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": "Capability URIs to grant (e.g. [\"read:calendar\", \"write:notes\"])"
+                        },
+                        "expires": {
+                            "type": "string",
+                            "description": "Expiry duration string (e.g. \"24h\", \"7d\", \"30d\")"
+                        },
+                        "max_uses": {
+                            "type": "integer",
+                            "description": "Maximum number of uses (null = unlimited)"
+                        },
+                        "allow_delegation": {
+                            "type": "boolean",
+                            "description": "Whether the grantee can delegate trust to others",
+                            "default": false
+                        },
+                        "identity": {
+                            "type": "string",
+                            "description": "Grantor identity name (default: \"default\")"
+                        }
+                    }
+                }
+            },
+            {
+                "name": "trust_revoke",
+                "description": "Revoke a trust grant",
+                "inputSchema": {
+                    "type": "object",
+                    "required": ["trust_id"],
+                    "properties": {
+                        "trust_id": {
+                            "type": "string",
+                            "description": "Trust grant ID (atrust_...)"
+                        },
+                        "reason": {
+                            "type": "string",
+                            "description": "Reason for revocation (manual_revocation, expired, compromised, policy_violation, grantee_request, or custom:<text>)",
+                            "default": "manual_revocation"
+                        },
+                        "identity": {
+                            "type": "string",
+                            "description": "Identity name performing the revocation (default: \"default\")"
+                        }
+                    }
+                }
+            },
+            {
+                "name": "trust_verify",
+                "description": "Verify whether a trust grant is currently valid for a capability",
+                "inputSchema": {
+                    "type": "object",
+                    "required": ["trust_id"],
+                    "properties": {
+                        "trust_id": {
+                            "type": "string",
+                            "description": "Trust grant ID (atrust_...)"
+                        },
+                        "capability": {
+                            "type": "string",
+                            "description": "Capability URI to check (default: \"*\" checks overall validity)"
+                        }
+                    }
+                }
+            },
+            {
+                "name": "trust_list",
+                "description": "List trust grants (granted by or received by this identity)",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "direction": {
+                            "type": "string",
+                            "enum": ["granted", "received", "both"],
+                            "description": "Which grants to list (default: \"both\")"
+                        },
+                        "valid_only": {
+                            "type": "boolean",
+                            "description": "Only show non-revoked grants (default: false)"
+                        }
+                    }
+                }
+            },
+            {
+                "name": "receipt_list",
+                "description": "List action receipts with optional filters",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "actor": {
+                            "type": "string",
+                            "description": "Filter by actor identity ID (aid_...)"
+                        },
+                        "action_type": {
+                            "type": "string",
+                            "description": "Filter by action type"
+                        },
+                        "limit": {
+                            "type": "integer",
+                            "description": "Maximum number of receipts to return (default: 20)"
+                        }
+                    }
+                }
+            },
+            {
+                "name": "identity_health",
+                "description": "Check system health: identity files, receipt store, trust store",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {}
+                }
+            },
+            {
+                "name": "continuity_record",
+                "description": "Record an experience event in the continuity chain",
+                "inputSchema": {
+                    "type": "object",
+                    "required": ["content_hash"],
+                    "properties": {
+                        "experience_type": {
+                            "type": "string",
+                            "description": "Experience type: perception, cognition, action, memory, learning, planning, emotion, idle, system (default: cognition)"
+                        },
+                        "content_hash": {
+                            "type": "string",
+                            "description": "Hash of the experience content"
+                        },
+                        "intensity": {
+                            "type": "number",
+                            "description": "Intensity of the experience (0.0 - 1.0, default: 0.5)"
+                        },
+                        "identity": {
+                            "type": "string",
+                            "description": "Identity name (default: \"default\")"
+                        }
+                    }
+                }
+            },
+            {
+                "name": "continuity_anchor",
+                "description": "Create a continuity anchor (checkpoint) at the current state",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "anchor_type": {
+                            "type": "string",
+                            "description": "Anchor type: genesis, manual, time_based, experience_count (default: manual)"
+                        },
+                        "identity": {
+                            "type": "string",
+                            "description": "Identity name (default: \"default\")"
+                        }
+                    }
+                }
+            },
+            {
+                "name": "continuity_heartbeat",
+                "description": "Create a heartbeat record indicating the agent is alive",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "status": {
+                            "type": "string",
+                            "description": "Heartbeat status: active, idle, suspended, degraded (default: active)"
+                        },
+                        "identity": {
+                            "type": "string",
+                            "description": "Identity name (default: \"default\")"
+                        }
+                    }
+                }
+            },
+            {
+                "name": "continuity_status",
+                "description": "Get the continuity status for an identity",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "identity": {
+                            "type": "string",
+                            "description": "Identity name (default: \"default\")"
+                        }
+                    }
+                }
+            },
+            {
+                "name": "continuity_gaps",
+                "description": "Detect gaps in the experience chain",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "grace_period_seconds": {
+                            "type": "integer",
+                            "description": "Grace period in seconds (gaps shorter are ignored, default: 300)"
+                        },
+                        "identity": {
+                            "type": "string",
+                            "description": "Identity name (default: \"default\")"
+                        }
+                    }
+                }
+            },
+            {
+                "name": "spawn_create",
+                "description": "Spawn a child identity with bounded authority",
+                "inputSchema": {
+                    "type": "object",
+                    "required": ["purpose", "authority"],
+                    "properties": {
+                        "spawn_type": {
+                            "type": "string",
+                            "description": "Spawn type: worker, delegate, clone, specialist (default: worker)"
+                        },
+                        "purpose": {
+                            "type": "string",
+                            "description": "Purpose of the spawned identity"
+                        },
+                        "authority": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": "Capability URIs to grant to the child"
+                        },
+                        "lifetime": {
+                            "type": "string",
+                            "description": "Lifetime: indefinite, parent_termination, or duration in seconds (default: indefinite)"
+                        },
+                        "identity": {
+                            "type": "string",
+                            "description": "Parent identity name (default: \"default\")"
+                        }
+                    }
+                }
+            },
+            {
+                "name": "spawn_terminate",
+                "description": "Terminate a spawned child identity",
+                "inputSchema": {
+                    "type": "object",
+                    "required": ["spawn_id"],
+                    "properties": {
+                        "spawn_id": {
+                            "type": "string",
+                            "description": "Spawn record ID (aspawn_...)"
+                        },
+                        "reason": {
+                            "type": "string",
+                            "description": "Reason for termination"
+                        },
+                        "cascade": {
+                            "type": "boolean",
+                            "description": "Whether to cascade termination to descendants (default: false)"
+                        },
+                        "identity": {
+                            "type": "string",
+                            "description": "Parent identity name (default: \"default\")"
+                        }
+                    }
+                }
+            },
+            {
+                "name": "spawn_list",
+                "description": "List spawned child identities",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "active_only": {
+                            "type": "boolean",
+                            "description": "Only show active (non-terminated) spawns (default: false)"
+                        },
+                        "identity": {
+                            "type": "string",
+                            "description": "Parent identity name (default: \"default\")"
+                        }
+                    }
+                }
+            },
+            {
+                "name": "spawn_lineage",
+                "description": "Get lineage information for an identity",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "identity": {
+                            "type": "string",
+                            "description": "Identity name (default: \"default\")"
+                        }
+                    }
+                }
+            },
+            {
+                "name": "spawn_authority",
+                "description": "Get effective authority for an identity (bounded by lineage)",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "identity": {
+                            "type": "string",
+                            "description": "Identity name (default: \"default\")"
+                        }
+                    }
+                }
+            },
+            {
+                "name": "competence_record",
+                "description": "Record a competence attempt outcome (success, failure, partial)",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "domain": { "type": "string", "description": "Competence domain (e.g., deploy, code_review)" },
+                        "outcome": { "type": "string", "description": "Outcome: success, failure, or partial" },
+                        "receipt_id": { "type": "string", "description": "Receipt ID linking to the action" },
+                        "reason": { "type": "string", "description": "Failure reason (for outcome=failure)" },
+                        "score": { "type": "number", "description": "Partial score 0.0-1.0 (for outcome=partial)" }
+                    },
+                    "required": ["domain", "outcome", "receipt_id"]
+                }
+            },
+            {
+                "name": "competence_show",
+                "description": "Get competence record for a domain",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "domain": { "type": "string", "description": "Competence domain" }
+                    }
+                }
+            },
+            {
+                "name": "competence_prove",
+                "description": "Generate a competence proof for a domain",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "domain": { "type": "string", "description": "Competence domain" },
+                        "min_rate": { "type": "number", "description": "Minimum success rate (0.0-1.0)" },
+                        "min_attempts": { "type": "integer", "description": "Minimum number of attempts" }
+                    },
+                    "required": ["domain"]
+                }
+            },
+            {
+                "name": "competence_verify",
+                "description": "Verify a competence proof",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "proof_id": { "type": "string", "description": "Proof ID to verify" }
+                    },
+                    "required": ["proof_id"]
+                }
+            },
+            {
+                "name": "competence_list",
+                "description": "List all competence domains for the identity",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {}
+                }
+            },
+            {
+                "name": "negative_prove",
+                "description": "Generate a negative capability proof (prove agent cannot do something)",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "capability": { "type": "string", "description": "Capability URI to prove impossible" }
+                    },
+                    "required": ["capability"]
+                }
+            },
+            {
+                "name": "negative_verify",
+                "description": "Verify a negative capability proof",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "proof_id": { "type": "string", "description": "Negative proof ID to verify" }
+                    },
+                    "required": ["proof_id"]
+                }
+            },
+            {
+                "name": "negative_declare",
+                "description": "Create a voluntary negative declaration (self-imposed restriction)",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "capabilities": { "type": "string", "description": "Comma-separated capability URIs to declare impossible" },
+                        "reason": { "type": "string", "description": "Reason for the declaration" },
+                        "permanent": { "type": "boolean", "description": "If true, cannot be undone" }
+                    },
+                    "required": ["capabilities", "reason"]
+                }
+            },
+            {
+                "name": "negative_list",
+                "description": "List all negative declarations for the identity",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {}
+                }
+            },
+            {
+                "name": "negative_check",
+                "description": "Quick check if a capability is structurally impossible",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "capability": { "type": "string", "description": "Capability URI to check" }
+                    },
+                    "required": ["capability"]
+                }
+            },
+            {
+                "name": "action_context",
+                "description": "Log the intent and context behind identity actions. Call this to record WHY you are performing identity operations",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "intent": {
+                            "type": "string",
+                            "description": "Why you are performing identity actions (e.g., 'establishing trust with new collaborator')"
+                        },
+                        "decision": {
+                            "type": "string",
+                            "description": "What was decided or concluded"
+                        },
+                        "significance": {
+                            "type": "string",
+                            "enum": ["routine", "important", "critical"],
+                            "description": "How significant this action is"
+                        },
+                        "topic": {
+                            "type": "string",
+                            "description": "Optional topic or category (e.g., 'trust-management', 'spawn-setup')"
+                        }
+                    },
+                    "required": ["intent"]
+                }
+            },
+            // ── V2: Grounding (anti-hallucination) ─────────────────────────
+            {
+                "name": "identity_ground",
+                "description": "Verify an authority/action claim has backing in trust grants, receipts, or competence records. Prevents hallucination about permissions",
+                "inputSchema": {
+                    "type": "object",
+                    "required": ["claim"],
+                    "properties": {
+                        "claim": { "type": "string", "description": "The claim to verify (e.g., 'agent has deploy permission')" },
+                        "identity": { "type": "string", "description": "Identity name (default: \"default\")" }
+                    }
+                }
+            },
+            {
+                "name": "identity_evidence",
+                "description": "Get detailed evidence for an identity claim from trust grants, receipts, and competence records",
+                "inputSchema": {
+                    "type": "object",
+                    "required": ["query"],
+                    "properties": {
+                        "query": { "type": "string", "description": "The query to search evidence for" },
+                        "identity": { "type": "string", "description": "Identity name (default: \"default\")" },
+                        "max_results": { "type": "integer", "default": 10 }
+                    }
+                }
+            },
+            {
+                "name": "identity_suggest",
+                "description": "Find similar grants, receipts, or competence records when a claim doesn't match exactly",
+                "inputSchema": {
+                    "type": "object",
+                    "required": ["query"],
+                    "properties": {
+                        "query": { "type": "string", "description": "The query to find suggestions for" },
+                        "identity": { "type": "string", "description": "Identity name (default: \"default\")" },
+                        "limit": { "type": "integer", "default": 5 }
+                    }
+                }
+            },
+            // ── V2: Multi-context workspaces ──────────────────────────────
+            {
+                "name": "identity_workspace_create",
+                "description": "Create a multi-identity workspace for comparing permissions across agents",
+                "inputSchema": {
+                    "type": "object",
+                    "required": ["name"],
+                    "properties": {
+                        "name": { "type": "string", "description": "Workspace name" }
+                    }
+                }
+            },
+            {
+                "name": "identity_workspace_add",
+                "description": "Add an identity directory to a workspace for cross-identity comparison",
+                "inputSchema": {
+                    "type": "object",
+                    "required": ["workspace_id", "path"],
+                    "properties": {
+                        "workspace_id": { "type": "string" },
+                        "path": { "type": "string", "description": "Path to identity directory" },
+                        "role": { "type": "string", "enum": ["primary", "secondary", "reference", "archive"], "default": "primary" },
+                        "label": { "type": "string" }
+                    }
+                }
+            },
+            {
+                "name": "identity_workspace_list",
+                "description": "List loaded identity contexts in a workspace",
+                "inputSchema": {
+                    "type": "object",
+                    "required": ["workspace_id"],
+                    "properties": {
+                        "workspace_id": { "type": "string" }
+                    }
+                }
+            },
+            {
+                "name": "identity_workspace_query",
+                "description": "Query across all identity contexts in a workspace",
+                "inputSchema": {
+                    "type": "object",
+                    "required": ["workspace_id", "query"],
+                    "properties": {
+                        "workspace_id": { "type": "string" },
+                        "query": { "type": "string" },
+                        "max_per_context": { "type": "integer", "default": 10 }
+                    }
+                }
+            },
+            {
+                "name": "identity_workspace_compare",
+                "description": "Compare permissions or capabilities across identity contexts",
+                "inputSchema": {
+                    "type": "object",
+                    "required": ["workspace_id", "item"],
+                    "properties": {
+                        "workspace_id": { "type": "string" },
+                        "item": { "type": "string" },
+                        "max_per_context": { "type": "integer", "default": 5 }
+                    }
+                }
+            },
+            {
+                "name": "identity_workspace_xref",
+                "description": "Cross-reference a permission across identity contexts",
+                "inputSchema": {
+                    "type": "object",
+                    "required": ["workspace_id", "item"],
+                    "properties": {
+                        "workspace_id": { "type": "string" },
+                        "item": { "type": "string" }
+                    }
+                }
+            }
+        ]);
         // V3: Append 58 invention tool definitions
         if let Value::Array(ref mut arr) = tools_list {
             arr.extend(invention_trust_dynamics::all_definitions());
@@ -1047,13 +1047,21 @@ impl McpServer {
             "identity_workspace_xref" => self.tool_identity_workspace_xref(id.clone(), &args),
             // V3: 16 Trust Inventions (58 tools across 4 modules)
             other => {
-                if let Some(r) = invention_trust_dynamics::try_execute(self, other, id.clone(), &args) {
+                if let Some(r) =
+                    invention_trust_dynamics::try_execute(self, other, id.clone(), &args)
+                {
                     r
-                } else if let Some(r) = invention_accountability::try_execute(self, other, id.clone(), &args) {
+                } else if let Some(r) =
+                    invention_accountability::try_execute(self, other, id.clone(), &args)
+                {
                     r
-                } else if let Some(r) = invention_federation::try_execute(self, other, id.clone(), &args) {
+                } else if let Some(r) =
+                    invention_federation::try_execute(self, other, id.clone(), &args)
+                {
                     r
-                } else if let Some(r) = invention_resilience::try_execute(self, other, id.clone(), &args) {
+                } else if let Some(r) =
+                    invention_resilience::try_execute(self, other, id.clone(), &args)
+                {
                     r
                 } else {
                     return rpc_error(id, -32803, format!("Tool not found: {tool_name}"));

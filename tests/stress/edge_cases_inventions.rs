@@ -6,13 +6,10 @@
 //! and resilience (forking, resurrection, temporal identity) scenarios
 //! through the core library APIs that underpin the MCP invention tools.
 
-use agentic_identity::competence::{
-    self, AttemptOutcome, CompetenceDomain, CompetenceRequirement,
-};
+use agentic_identity::competence::{self, AttemptOutcome, CompetenceDomain, CompetenceRequirement};
 use agentic_identity::continuity::{
-    self, AnchorType, CognitionType, CommunicationDirection, ExperienceType,
-    HeartbeatStatus, HealthMetrics, LearningType, MemoryOpType, PerceptionSource, PlanningType,
-    SystemEvent,
+    self, AnchorType, CognitionType, CommunicationDirection, ExperienceType, HealthMetrics,
+    HeartbeatStatus, LearningType, MemoryOpType, PerceptionSource, PlanningType, SystemEvent,
 };
 use agentic_identity::identity::IdentityAnchor;
 use agentic_identity::negative::{self, ImpossibilityReason};
@@ -93,7 +90,10 @@ fn inv_trust_grant_with_time_bounded_constraints_expires() {
     // Grant that expired 1 second ago
     let grant = TrustGrantBuilder::new(grantor.id(), grantee.id(), make_key_b64(&grantee))
         .capability(Capability::new("deploy:*"))
-        .constraints(TrustConstraints::time_bounded(now - 2_000_000, now - 1_000_000))
+        .constraints(TrustConstraints::time_bounded(
+            now - 2_000_000,
+            now - 1_000_000,
+        ))
         .sign(grantor.signing_key())
         .unwrap();
 
@@ -110,12 +110,18 @@ fn inv_trust_grant_not_yet_valid_future_window() {
 
     let grant = TrustGrantBuilder::new(grantor.id(), grantee.id(), make_key_b64(&grantee))
         .capability(Capability::new("monitor:*"))
-        .constraints(TrustConstraints::time_bounded(now + 60_000_000, now + 120_000_000))
+        .constraints(TrustConstraints::time_bounded(
+            now + 60_000_000,
+            now + 120_000_000,
+        ))
         .sign(grantor.signing_key())
         .unwrap();
 
     let result = verify_trust_grant(&grant, "monitor:logs", 0, &[]).unwrap();
-    assert!(!result.time_valid, "Not-yet-valid grant should fail time check");
+    assert!(
+        !result.time_valid,
+        "Not-yet-valid grant should fail time check"
+    );
     assert!(!result.is_valid);
 }
 
@@ -131,7 +137,10 @@ fn inv_trust_reinforce_by_acknowledging_grant() {
 
     assert!(grant.grantee_acknowledgment.is_none());
     grant.acknowledge(grantee.signing_key()).unwrap();
-    assert!(grant.grantee_acknowledgment.is_some(), "Grant should be acknowledged");
+    assert!(
+        grant.grantee_acknowledgment.is_some(),
+        "Grant should be acknowledged"
+    );
 
     // Acknowledged grant is still valid
     let result = verify_trust_grant(&grant, "calendar:events", 0, &[]).unwrap();
@@ -174,13 +183,18 @@ fn inv_trust_max_uses_boundary_exact_limit() {
     // Uses 0 through 4 should be valid
     for uses in 0..5 {
         assert!(
-            verify_trust_grant(&grant, "api:call", uses, &[]).unwrap().is_valid,
-            "Use {} should be valid", uses
+            verify_trust_grant(&grant, "api:call", uses, &[])
+                .unwrap()
+                .is_valid,
+            "Use {} should be valid",
+            uses
         );
     }
     // Use 5 should fail
     assert!(
-        !verify_trust_grant(&grant, "api:call", 5, &[]).unwrap().is_valid,
+        !verify_trust_grant(&grant, "api:call", 5, &[])
+            .unwrap()
+            .is_valid,
         "Use 5 should exceed max"
     );
 }
@@ -208,7 +222,9 @@ fn inv_competence_all_failures_zero_rate() {
         let attempt = competence::record_attempt(
             &anchor,
             domain.clone(),
-            AttemptOutcome::Failure { reason: format!("error-{}", i) },
+            AttemptOutcome::Failure {
+                reason: format!("error-{}", i),
+            },
             make_receipt_id(&anchor, i),
             None,
             None,
@@ -292,7 +308,9 @@ fn inv_competence_streak_breaks_on_failure_then_recovers() {
         let outcome = if success {
             AttemptOutcome::Success
         } else {
-            AttemptOutcome::Failure { reason: "test".into() }
+            AttemptOutcome::Failure {
+                reason: "test".into(),
+            }
         };
         let attempt = competence::record_attempt(
             &anchor,
@@ -322,7 +340,9 @@ fn inv_competence_proof_generation_fails_low_success_rate() {
         let outcome = if i < 2 {
             AttemptOutcome::Success
         } else {
-            AttemptOutcome::Failure { reason: "test".into() }
+            AttemptOutcome::Failure {
+                reason: "test".into(),
+            }
         };
         let attempt = competence::record_attempt(
             &anchor,
@@ -484,7 +504,9 @@ fn inv_competence_check_requirement_streak_not_met() {
         let outcome = if i % 2 == 0 || i >= 10 {
             AttemptOutcome::Success
         } else {
-            AttemptOutcome::Failure { reason: "test".into() }
+            AttemptOutcome::Failure {
+                reason: "test".into(),
+            }
         };
         let attempt = competence::record_attempt(
             &anchor,
@@ -532,7 +554,9 @@ fn inv_competence_multi_domain_isolation() {
         let attempt_b = competence::record_attempt(
             &anchor,
             domain_b.clone(),
-            AttemptOutcome::Failure { reason: "test".into() },
+            AttemptOutcome::Failure {
+                reason: "test".into(),
+            },
             make_receipt_id(&anchor, i + 100),
             None,
             None,
@@ -600,10 +624,26 @@ fn inv_reputation_multi_grantor_trust_web() {
         .sign(grantor_c.signing_key())
         .unwrap();
 
-    assert!(verify_trust_grant(&grant_a, "deploy:staging", 0, &[]).unwrap().is_valid);
-    assert!(verify_trust_grant(&grant_b, "deploy:production", 0, &[]).unwrap().is_valid);
-    assert!(verify_trust_grant(&grant_c, "monitor:logs", 0, &[]).unwrap().is_valid);
-    assert!(!verify_trust_grant(&grant_a, "deploy:production", 0, &[]).unwrap().is_valid);
+    assert!(
+        verify_trust_grant(&grant_a, "deploy:staging", 0, &[])
+            .unwrap()
+            .is_valid
+    );
+    assert!(
+        verify_trust_grant(&grant_b, "deploy:production", 0, &[])
+            .unwrap()
+            .is_valid
+    );
+    assert!(
+        verify_trust_grant(&grant_c, "monitor:logs", 0, &[])
+            .unwrap()
+            .is_valid
+    );
+    assert!(
+        !verify_trust_grant(&grant_a, "deploy:production", 0, &[])
+            .unwrap()
+            .is_valid
+    );
 }
 
 #[test]
@@ -630,9 +670,17 @@ fn inv_reputation_revocation_isolates_single_grant() {
         grantor.signing_key(),
     );
 
-    assert!(!verify_trust_grant(&grant1, "read:logs", 0, &[revocation.clone()]).unwrap().is_valid);
-    assert!(verify_trust_grant(&grant2, "write:config", 0, &[revocation]).unwrap().is_valid,
-        "Revoking grant1 should not affect grant2");
+    assert!(
+        !verify_trust_grant(&grant1, "read:logs", 0, &[revocation.clone()])
+            .unwrap()
+            .is_valid
+    );
+    assert!(
+        verify_trust_grant(&grant2, "write:config", 0, &[revocation])
+            .unwrap()
+            .is_valid,
+        "Revoking grant1 should not affect grant2"
+    );
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -663,7 +711,11 @@ fn inv_receipt_all_action_types_sign_and_verify() {
         .unwrap();
 
         let result = verify_receipt(&receipt).unwrap();
-        assert!(result.is_valid, "Receipt with {:?} should verify", action_type);
+        assert!(
+            result.is_valid,
+            "Receipt with {:?} should verify",
+            action_type
+        );
     }
 }
 
@@ -712,13 +764,9 @@ fn inv_receipt_chain_maintains_ordering() {
 fn inv_receipt_empty_content_accepted() {
     let anchor = IdentityAnchor::new(Some("inv5-empty".into()));
 
-    let receipt = ReceiptBuilder::new(
-        anchor.id(),
-        ActionType::Observation,
-        ActionContent::new(""),
-    )
-    .sign(anchor.signing_key())
-    .unwrap();
+    let receipt = ReceiptBuilder::new(anchor.id(), ActionType::Observation, ActionContent::new(""))
+        .sign(anchor.signing_key())
+        .unwrap();
 
     assert!(verify_receipt(&receipt).unwrap().is_valid);
 }
@@ -757,7 +805,11 @@ fn inv_consent_grant_with_revocation_witnesses() {
 
     assert_eq!(grant.revocation.required_witnesses.len(), 1);
     assert_eq!(grant.revocation.required_witnesses[0], witness.id());
-    assert!(verify_trust_grant(&grant, "data:access", 0, &[]).unwrap().is_valid);
+    assert!(
+        verify_trust_grant(&grant, "data:access", 0, &[])
+            .unwrap()
+            .is_valid
+    );
 }
 
 #[test]
@@ -774,10 +826,26 @@ fn inv_consent_multiple_capabilities_single_grant() {
         .sign(grantor.signing_key())
         .unwrap();
 
-    assert!(verify_trust_grant(&grant, "read:calendar", 0, &[]).unwrap().is_valid);
-    assert!(verify_trust_grant(&grant, "write:notes", 0, &[]).unwrap().is_valid);
-    assert!(verify_trust_grant(&grant, "execute:scripts", 0, &[]).unwrap().is_valid);
-    assert!(!verify_trust_grant(&grant, "delete:all", 0, &[]).unwrap().is_valid);
+    assert!(
+        verify_trust_grant(&grant, "read:calendar", 0, &[])
+            .unwrap()
+            .is_valid
+    );
+    assert!(
+        verify_trust_grant(&grant, "write:notes", 0, &[])
+            .unwrap()
+            .is_valid
+    );
+    assert!(
+        verify_trust_grant(&grant, "execute:scripts", 0, &[])
+            .unwrap()
+            .is_valid
+    );
+    assert!(
+        !verify_trust_grant(&grant, "delete:all", 0, &[])
+            .unwrap()
+            .is_valid
+    );
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -917,7 +985,10 @@ fn inv_trust_chain_capability_narrowing() {
     assert!(ok.is_valid);
 
     let bad = verify_trust_chain(&[ab, bc], "deploy:production", &[]).unwrap();
-    assert!(!bad.is_valid, "Narrowed chain should not cover deploy:production");
+    assert!(
+        !bad.is_valid,
+        "Narrowed chain should not cover deploy:production"
+    );
 }
 
 #[test]
@@ -970,7 +1041,11 @@ fn inv_revocation_cascade_all_reasons() {
         );
 
         let result = verify_trust_grant(&grant, "test:action", 0, &[revocation]).unwrap();
-        assert!(!result.is_valid, "Revocation with {:?} should invalidate", reason);
+        assert!(
+            !result.is_valid,
+            "Revocation with {:?} should invalidate",
+            reason
+        );
     }
 }
 
@@ -1008,8 +1083,14 @@ fn inv_capability_wildcard_edge_cases() {
     assert!(!capability_uri_covers("deploy:*", "read:files"));
 
     assert!(capability_uri_covers("deploy:staging", "deploy:staging"));
-    assert!(!capability_uri_covers("deploy:staging", "deploy:production"));
-    assert!(!capability_uri_covers("deploy:staging", "deploy:staging:extra"));
+    assert!(!capability_uri_covers(
+        "deploy:staging",
+        "deploy:production"
+    ));
+    assert!(!capability_uri_covers(
+        "deploy:staging",
+        "deploy:staging:extra"
+    ));
 
     assert!(!capability_uri_covers("dep", "deploy:staging"));
 
@@ -1204,7 +1285,10 @@ fn inv_fork_cannot_spawn_beyond_ceiling() {
         &[],
     );
 
-    assert!(result.is_err(), "Should fail: write:* outside read:* ceiling");
+    assert!(
+        result.is_err(),
+        "Should fail: write:* outside read:* ceiling"
+    );
 }
 
 #[test]
@@ -1254,14 +1338,7 @@ fn inv_fork_terminate_does_not_affect_sibling() {
     .unwrap();
 
     // Terminate fork_a (no cascade, no other records to cascade into)
-    spawn::terminate_spawn(
-        &parent,
-        &mut record_a,
-        "no longer needed",
-        false,
-        &mut [],
-    )
-    .unwrap();
+    spawn::terminate_spawn(&parent, &mut record_a, "no longer needed", false, &mut []).unwrap();
 
     assert!(record_a.terminated);
     assert!(!record_b.terminated, "Sibling should not be terminated");
@@ -1294,7 +1371,10 @@ fn inv_zk_prove_cannot_spawn_exclusion() {
     );
 
     let proof = negative::prove_cannot(&child, "email:inbox", &[], &[spawn_record]).unwrap();
-    assert!(matches!(proof.reason, ImpossibilityReason::SpawnExclusion { .. }));
+    assert!(matches!(
+        proof.reason,
+        ImpossibilityReason::SpawnExclusion { .. }
+    ));
 }
 
 #[test]
@@ -1309,12 +1389,7 @@ fn inv_zk_prove_cannot_lineage_exclusion() {
         vec!["calendar:*"],
         vec!["calendar:*"],
     );
-    let spawn2 = make_spawn_record(
-        &parent,
-        &child,
-        vec!["calendar:read"],
-        vec!["calendar:*"],
-    );
+    let spawn2 = make_spawn_record(&parent, &child, vec!["calendar:read"], vec!["calendar:*"]);
 
     let proof = negative::prove_cannot(&child, "deploy:prod", &[], &[spawn1, spawn2]).unwrap();
     assert_eq!(proof.reason, ImpossibilityReason::NotInLineage);
@@ -1371,13 +1446,7 @@ fn inv_zk_voluntary_declaration_makes_impossible() {
     assert!(decl.permanent);
     assert_eq!(decl.cannot_do.len(), 2);
 
-    let result = negative::is_impossible(
-        &anchor.id(),
-        "harmful:action",
-        &[],
-        &[],
-        &[decl],
-    );
+    let result = negative::is_impossible(&anchor.id(), "harmful:action", &[], &[], &[decl]);
     assert!(result.is_some(), "Declared capability should be impossible");
 }
 
@@ -1385,13 +1454,7 @@ fn inv_zk_voluntary_declaration_makes_impossible() {
 fn inv_zk_empty_declaration_rejected() {
     let anchor = IdentityAnchor::new(Some("inv15-empty".into()));
 
-    let result = negative::declare_cannot(
-        &anchor,
-        vec![],
-        "no reason",
-        false,
-        vec![],
-    );
+    let result = negative::declare_cannot(&anchor, vec![], "no reason", false, vec![]);
     assert!(result.is_err(), "Empty declaration should be rejected");
 }
 
@@ -1425,19 +1488,16 @@ fn inv_zk_get_all_impossibilities() {
         vec!["calendar:*", "email:*", "deploy:*"],
     );
 
-    let decl = negative::declare_cannot(
-        &child,
-        vec!["admin:*".to_string()],
-        "policy",
-        false,
-        vec![],
-    )
-    .unwrap();
+    let decl =
+        negative::declare_cannot(&child, vec!["admin:*".to_string()], "policy", false, vec![])
+            .unwrap();
 
-    let impossibilities =
-        negative::get_impossibilities(&child.id(), &[], &[spawn_record], &[decl]);
+    let impossibilities = negative::get_impossibilities(&child.id(), &[], &[spawn_record], &[decl]);
 
-    assert!(impossibilities.len() >= 2, "Should have multiple impossibilities");
+    assert!(
+        impossibilities.len() >= 2,
+        "Should have multiple impossibilities"
+    );
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -1450,7 +1510,9 @@ fn inv_temporal_experience_chain_integrity() {
 
     let exp1 = continuity::record_experience(
         &anchor,
-        ExperienceType::Cognition { cognition_type: CognitionType::Thought },
+        ExperienceType::Cognition {
+            cognition_type: CognitionType::Thought,
+        },
         "hash_genesis",
         0.5,
         None,
@@ -1459,7 +1521,9 @@ fn inv_temporal_experience_chain_integrity() {
 
     let exp2 = continuity::record_experience(
         &anchor,
-        ExperienceType::Cognition { cognition_type: CognitionType::Reasoning },
+        ExperienceType::Cognition {
+            cognition_type: CognitionType::Reasoning,
+        },
         "hash_second",
         0.7,
         Some(&exp1),
@@ -1468,7 +1532,9 @@ fn inv_temporal_experience_chain_integrity() {
 
     let exp3 = continuity::record_experience(
         &anchor,
-        ExperienceType::Cognition { cognition_type: CognitionType::Inference },
+        ExperienceType::Cognition {
+            cognition_type: CognitionType::Inference,
+        },
         "hash_third",
         0.9,
         Some(&exp2),
@@ -1490,7 +1556,9 @@ fn inv_temporal_intensity_out_of_range_rejected() {
 
     let over = continuity::record_experience(
         &anchor,
-        ExperienceType::Idle { reason: "test".into() },
+        ExperienceType::Idle {
+            reason: "test".into(),
+        },
         "hash_over",
         1.5,
         None,
@@ -1499,7 +1567,9 @@ fn inv_temporal_intensity_out_of_range_rejected() {
 
     let under = continuity::record_experience(
         &anchor,
-        ExperienceType::Idle { reason: "test".into() },
+        ExperienceType::Idle {
+            reason: "test".into(),
+        },
         "hash_under",
         -0.1,
         None,
@@ -1513,36 +1583,51 @@ fn inv_temporal_experience_types_all_recorded() {
     let dummy_identity = IdentityAnchor::new(Some("inv16-partner".into()));
 
     let types: Vec<ExperienceType> = vec![
-        ExperienceType::Cognition { cognition_type: CognitionType::Thought },
-        ExperienceType::Cognition { cognition_type: CognitionType::Reasoning },
-        ExperienceType::Cognition { cognition_type: CognitionType::Inference },
-        ExperienceType::Cognition { cognition_type: CognitionType::Recall },
-        ExperienceType::Perception { source: PerceptionSource::Text },
+        ExperienceType::Cognition {
+            cognition_type: CognitionType::Thought,
+        },
+        ExperienceType::Cognition {
+            cognition_type: CognitionType::Reasoning,
+        },
+        ExperienceType::Cognition {
+            cognition_type: CognitionType::Inference,
+        },
+        ExperienceType::Cognition {
+            cognition_type: CognitionType::Recall,
+        },
+        ExperienceType::Perception {
+            source: PerceptionSource::Text,
+        },
         ExperienceType::Communication {
             direction: CommunicationDirection::Outbound,
             counterparty: dummy_identity.id(),
         },
-        ExperienceType::Memory { operation: MemoryOpType::Store },
+        ExperienceType::Memory {
+            operation: MemoryOpType::Store,
+        },
         ExperienceType::Learning {
             learning_type: LearningType::SelfDirected,
             domain: "testing".into(),
         },
-        ExperienceType::Planning { planning_type: PlanningType::GoalSetting },
-        ExperienceType::System { event: SystemEvent::Checkpoint },
-        ExperienceType::Idle { reason: "waiting".into() },
-        ExperienceType::Emotion { emotion_type: "curiosity".into() },
+        ExperienceType::Planning {
+            planning_type: PlanningType::GoalSetting,
+        },
+        ExperienceType::System {
+            event: SystemEvent::Checkpoint,
+        },
+        ExperienceType::Idle {
+            reason: "waiting".into(),
+        },
+        ExperienceType::Emotion {
+            emotion_type: "curiosity".into(),
+        },
     ];
 
     let mut prev: Option<continuity::ExperienceEvent> = None;
     for (i, et) in types.into_iter().enumerate() {
-        let exp = continuity::record_experience(
-            &anchor,
-            et,
-            &format!("hash_{}", i),
-            0.5,
-            prev.as_ref(),
-        )
-        .unwrap();
+        let exp =
+            continuity::record_experience(&anchor, et, &format!("hash_{}", i), 0.5, prev.as_ref())
+                .unwrap();
         assert_eq!(exp.sequence_number, i as u64);
         prev = Some(exp);
     }
@@ -1554,21 +1639,17 @@ fn inv_temporal_anchor_creation() {
 
     let exp = continuity::record_experience(
         &anchor,
-        ExperienceType::Cognition { cognition_type: CognitionType::Thought },
+        ExperienceType::Cognition {
+            cognition_type: CognitionType::Thought,
+        },
         "hash_anchor",
         0.5,
         None,
     )
     .unwrap();
 
-    let cont_anchor = continuity::create_anchor(
-        &anchor,
-        AnchorType::Manual,
-        &exp,
-        None,
-        None,
-    )
-    .unwrap();
+    let cont_anchor =
+        continuity::create_anchor(&anchor, AnchorType::Manual, &exp, None, None).unwrap();
 
     assert!(cont_anchor.id.0.starts_with("aanch_"));
     assert_eq!(cont_anchor.experience_count, exp.sequence_number + 1);
@@ -1581,7 +1662,9 @@ fn inv_temporal_anchor_with_external_witness() {
 
     let exp = continuity::record_experience(
         &anchor,
-        ExperienceType::System { event: SystemEvent::Checkpoint },
+        ExperienceType::System {
+            event: SystemEvent::Checkpoint,
+        },
         "hash_witness",
         1.0,
         None,
@@ -1590,14 +1673,19 @@ fn inv_temporal_anchor_with_external_witness() {
 
     let cont_anchor = continuity::create_anchor(
         &anchor,
-        AnchorType::External { witness: witness.id() },
+        AnchorType::External {
+            witness: witness.id(),
+        },
         &exp,
         None,
         Some(&witness),
     )
     .unwrap();
 
-    assert!(cont_anchor.external_witness.is_some(), "Should have witness signature");
+    assert!(
+        cont_anchor.external_witness.is_some(),
+        "Should have witness signature"
+    );
 }
 
 #[test]
@@ -1606,7 +1694,9 @@ fn inv_temporal_gap_detection() {
 
     let exp1 = continuity::record_experience(
         &anchor,
-        ExperienceType::Cognition { cognition_type: CognitionType::Thought },
+        ExperienceType::Cognition {
+            cognition_type: CognitionType::Thought,
+        },
         "hash_gap1",
         0.5,
         None,
@@ -1615,7 +1705,9 @@ fn inv_temporal_gap_detection() {
 
     let exp2 = continuity::record_experience(
         &anchor,
-        ExperienceType::Cognition { cognition_type: CognitionType::Thought },
+        ExperienceType::Cognition {
+            cognition_type: CognitionType::Thought,
+        },
         "hash_gap2",
         0.5,
         Some(&exp1),
@@ -1624,7 +1716,10 @@ fn inv_temporal_gap_detection() {
 
     // With large grace period, closely spaced events should have no gaps
     let gaps = continuity::detect_gaps(&[exp1, exp2], 3600);
-    assert!(gaps.is_empty(), "Closely spaced events with 1h grace should have no gaps");
+    assert!(
+        gaps.is_empty(),
+        "Closely spaced events with 1h grace should have no gaps"
+    );
 }
 
 #[test]
@@ -1699,10 +1794,7 @@ fn inv_cross_spawn_child_cannot_exceed_parent_ceiling() {
         parent_id: IdentityAnchor::new(None).id(),
         spawn_type: SpawnType::Delegate,
         spawn_timestamp: 0,
-        authority_ceiling: vec![
-            Capability::new("read:*"),
-            Capability::new("monitor:*"),
-        ],
+        authority_ceiling: vec![Capability::new("read:*"), Capability::new("monitor:*")],
         lifetime: SpawnLifetime::Indefinite,
         constraints: SpawnConstraints {
             max_spawn_depth: Some(5),
@@ -1725,7 +1817,10 @@ fn inv_cross_spawn_child_cannot_exceed_parent_ceiling() {
         &[],
     );
 
-    assert!(result.is_err(), "Should fail: deploy:* not in parent ceiling");
+    assert!(
+        result.is_err(),
+        "Should fail: deploy:* not in parent ceiling"
+    );
 }
 
 #[test]
@@ -1811,7 +1906,10 @@ fn inv_cross_identity_uniqueness_across_many() {
 
     let mut ids: std::collections::HashSet<String> = std::collections::HashSet::new();
     for identity in &identities {
-        assert!(ids.insert(identity.id().0.clone()), "Duplicate identity ID found");
+        assert!(
+            ids.insert(identity.id().0.clone()),
+            "Duplicate identity ID found"
+        );
     }
     assert_eq!(ids.len(), 50);
 }
@@ -1904,7 +2002,10 @@ fn inv_cross_negative_is_impossible_returns_none_when_possible() {
     let ceiling = vec!["deploy:*".to_string()];
 
     let result = negative::is_impossible(&anchor.id(), "deploy:staging", &ceiling, &[], &[]);
-    assert!(result.is_none(), "deploy:staging IS in ceiling, so not impossible");
+    assert!(
+        result.is_none(),
+        "deploy:staging IS in ceiling, so not impossible"
+    );
 }
 
 #[test]
@@ -1935,5 +2036,8 @@ fn inv_cross_negative_declaration_with_multiple_capabilities() {
 
     // Something not declared should not be impossible
     let result = negative::is_impossible(&anchor.id(), "read:calendar", &[], &[], &[decl]);
-    assert!(result.is_none(), "read:calendar was not declared impossible");
+    assert!(
+        result.is_none(),
+        "read:calendar was not declared impossible"
+    );
 }

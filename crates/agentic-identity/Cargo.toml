@@ -99,6 +99,11 @@ path = "../../tests/stress/concurrency_trust.rs"
 name = "edge_cases_identity"
 path = "../../tests/stress/edge_cases_identity.rs"
 
+# Edge case tests for invention tools
+[[test]]
+name = "edge_cases_inventions"
+path = "../../tests/stress/edge_cases_inventions.rs"
+
 # Resilience tests
 [[test]]
 name = "resilience"

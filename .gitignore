@@ -72,3 +72,7 @@ SPEC-*.md
 # Internal docs (not for public repo)
 docs/REPO_HYGIENE.md
 docs/internal/
+ECOSYSTEM-CONVENTIONS.md
+
+# Local goals (internal only)
+goals/
