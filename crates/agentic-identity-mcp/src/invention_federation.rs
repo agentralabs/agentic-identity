@@ -919,7 +919,7 @@ pub fn execute_identity_capability_available(server: &McpServer, id: Value, args
         }
     }
 
-    for (_, v) in &cap_set {
+    for v in cap_set.values() {
         capabilities.push(v.clone());
     }
     capabilities.sort_by(|a, b| {

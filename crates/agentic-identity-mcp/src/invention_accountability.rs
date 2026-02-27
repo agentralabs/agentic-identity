@@ -120,7 +120,7 @@ fn micros_to_display(micros: u64) -> String {
 }
 
 fn is_leap(y: u64) -> bool {
-    (y % 4 == 0 && y % 100 != 0) || y % 400 == 0
+    (y.is_multiple_of(4) && !y.is_multiple_of(100)) || y.is_multiple_of(400)
 }
 
 /// Format an ActionType as a string tag.
@@ -1290,7 +1290,7 @@ pub fn execute_identity_consent_gaps(server: &McpServer, id: Value, _args: &Valu
 
     for r in &receipts {
         let actor_caps = actor_capabilities.get(&r.actor.0);
-        let has_any_grant = actor_caps.map_or(false, |caps| !caps.is_empty());
+        let has_any_grant = actor_caps.is_some_and(|caps| !caps.is_empty());
 
         if !has_any_grant {
             gaps.push(json!({

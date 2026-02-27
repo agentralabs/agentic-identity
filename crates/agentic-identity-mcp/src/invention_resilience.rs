@@ -1139,11 +1139,7 @@ pub fn execute_identity_fork_conflicts(server: &McpServer, id: Value, args: &Val
     let overlap_window: u64 = 60_000_000; // 60 seconds in microseconds
     for fr in &fork_receipts {
         for pr in &parent_receipts {
-            let diff = if fr.timestamp > pr.timestamp {
-                fr.timestamp - pr.timestamp
-            } else {
-                pr.timestamp - fr.timestamp
-            };
+            let diff = fr.timestamp.abs_diff(pr.timestamp);
             if diff < overlap_window {
                 temporal_conflicts.push(json!({
                     "fork_receipt": fr.id.0,
@@ -1625,7 +1621,7 @@ pub fn execute_identity_temporal_query(server: &McpServer, id: Value, args: &Val
                     };
                     if matches {
                         let was_terminated =
-                            r.terminated && r.terminated_at.map_or(false, |t| t <= query_micros);
+                            r.terminated && r.terminated_at.is_some_and(|t| t <= query_micros);
                         let caps: Vec<&str> =
                             r.authority_granted.iter().map(|c| c.uri.as_str()).collect();
                         spawn_state_at_time.push(json!({

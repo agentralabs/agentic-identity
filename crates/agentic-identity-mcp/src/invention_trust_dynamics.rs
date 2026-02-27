@@ -478,7 +478,7 @@ pub fn execute_identity_trust_damage(server: &McpServer, id: Value, args: &Value
                 "actions_needed": match severity {
                     "minor" => "Resume normal positive interactions",
                     "moderate" => "Demonstrate reliability through consistent positive actions",
-                    "severe" | _ => "Requires sustained period of positive interactions and formal trust rebuilding",
+                    _ => "Requires sustained period of positive interactions and formal trust rebuilding",
                 },
             },
         }))
@@ -728,11 +728,9 @@ pub fn execute_identity_competence_predict(server: &McpServer, id: Value, args: 
                         if desc.contains("success")
                             || desc.contains("completed")
                             || desc.contains("passed")
-                        {
-                            positive += 1;
-                        } else if !desc.contains("fail")
-                            && !desc.contains("error")
-                            && !desc.contains("reject")
+                            || (!desc.contains("fail")
+                                && !desc.contains("error")
+                                && !desc.contains("reject"))
                         {
                             positive += 1;
                         }
@@ -954,7 +952,7 @@ pub fn execute_identity_reputation_get(server: &McpServer, id: Value, args: &Val
         if let Ok(ids) = store.list_granted() {
             for tid in &ids {
                 if let Ok(grant) = store.load_grant(tid) {
-                    let matches = agent_id.map_or(true, |aid| {
+                    let matches = agent_id.is_none_or(|aid| {
                         grant.grantor.0.contains(aid) || aid.contains(&grant.grantor.0)
                     });
                     if matches {
@@ -975,7 +973,7 @@ pub fn execute_identity_reputation_get(server: &McpServer, id: Value, args: &Val
         if let Ok(ids) = store.list_received() {
             for tid in &ids {
                 if let Ok(grant) = store.load_grant(tid) {
-                    let matches = agent_id.map_or(true, |aid| {
+                    let matches = agent_id.is_none_or(|aid| {
                         grant.grantee.0.contains(aid) || aid.contains(&grant.grantee.0)
                     });
                     if matches {
@@ -992,7 +990,7 @@ pub fn execute_identity_reputation_get(server: &McpServer, id: Value, args: &Val
         if let Ok(ids) = store.list() {
             for rid in &ids {
                 if let Ok(receipt) = store.load(rid) {
-                    let matches = agent_id.map_or(true, |aid| {
+                    let matches = agent_id.is_none_or(|aid| {
                         receipt.actor.0.contains(aid) || aid.contains(&receipt.actor.0)
                     });
                     if matches {

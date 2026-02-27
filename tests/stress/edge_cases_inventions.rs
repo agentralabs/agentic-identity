@@ -671,7 +671,7 @@ fn inv_reputation_revocation_isolates_single_grant() {
     );
 
     assert!(
-        !verify_trust_grant(&grant1, "read:logs", 0, &[revocation.clone()])
+        !verify_trust_grant(&grant1, "read:logs", 0, std::slice::from_ref(&revocation))
             .unwrap()
             .is_valid
     );
@@ -2030,7 +2030,7 @@ fn inv_cross_negative_declaration_with_multiple_capabilities() {
 
     // Each declared capability should be impossible
     for cap in &decl.cannot_do {
-        let result = negative::is_impossible(&anchor.id(), cap, &[], &[], &[decl.clone()]);
+        let result = negative::is_impossible(&anchor.id(), cap, &[], &[], std::slice::from_ref(&decl));
         assert!(result.is_some(), "Declared '{}' should be impossible", cap);
     }
 
