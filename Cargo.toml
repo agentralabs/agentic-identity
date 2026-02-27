@@ -17,8 +17,8 @@ homepage = "https://agentralabs.tech"
 authors = ["Agentra Labs <contact@agentralabs.tech>"]
 
 [workspace.dependencies]
-# Contracts (shared sister traits)
-agentic-contracts = { version = "0.2.0", path = "../agentic-contracts" }
+# SDK (shared sister traits)
+agentic-sdk = { version = "0.2.0", path = "../agentic-sdk" }
 
 # Crypto
 ed25519-dalek = { version = "2.1", features = ["rand_core", "serde"] }

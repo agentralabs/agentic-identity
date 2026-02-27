@@ -1,4 +1,4 @@
-//! Agentic-contracts trait implementations for AgenticIdentity.
+//! Agentic-sdk trait implementations for AgenticIdentity.
 //!
 //! Implements: Sister, SessionManagement, Grounding, Queryable
 //! Does NOT implement: FileFormatReader/Writer (directory-based JSON storage),
@@ -7,7 +7,7 @@
 use std::path::PathBuf;
 use std::time::Instant;
 
-use agentic_contracts::prelude::*;
+use agentic_sdk::prelude::*;
 use chrono::Utc;
 
 use crate::error::IdentityError;
