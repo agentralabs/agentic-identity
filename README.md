@@ -12,7 +12,7 @@
 </p>
 
 <p align="center">
-  <a href="#quickstart">Quickstart</a> · <a href="#problems-solved">Problems Solved</a> · <a href="#how-it-works">How It Works</a> · <a href="#why-agenticidentity">Why</a> · <a href="#mcp-server">MCP Server</a> · <a href="#benchmarks">Benchmarks</a> · <a href="#install">Install</a> · <a href="docs/api-reference.md">API</a> · <a href="docs/faq.md">FAQ</a> · <a href="paper/paper-i-trust-anchor/agenticidentity-paper.pdf">Paper</a>
+  <a href="#quickstart">Quickstart</a> · <a href="#problems-solved">Problems Solved</a> · <a href="#how-it-works">How It Works</a> · <a href="#why-agenticidentity">Why</a> · <a href="#mcp-server">MCP Server</a> · <a href="#benchmarks">Benchmarks</a> · <a href="#install">Install</a> · <a href="docs/api-reference.md">API</a> · <a href="docs/faq.md">FAQ</a> · <a href="paper/paper-i-trust-anchor/agenticidentity-paper.pdf">Papers</a>
 </p>
 
 ---
