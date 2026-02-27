@@ -23,6 +23,10 @@ use clap::{Parser, Subcommand};
 use serde_json::{json, Value};
 
 mod ghost_bridge;
+mod invention_accountability;
+mod invention_federation;
+mod invention_resilience;
+mod invention_trust_dynamics;
 
 use agentic_identity::receipt::receipt::ReceiptBuilder;
 use agentic_identity::receipt::verify::verify_receipt;
@@ -336,13 +340,10 @@ impl McpServer {
     // ── tools/list ────────────────────────────────────────────────────────────
 
     fn handle_tools_list(&self, id: Value) -> Value {
-        ok_result(
-            id,
-            json!({
-                "tools": [
+        let mut tools_list = json!([
                     {
                         "name": "identity_create",
-                        "description": "Create a new AgenticIdentity. Uses the default MCP passphrase.",
+                        "description": "Create a new AgenticIdentity. Uses the default MCP passphrase",
                         "inputSchema": {
                             "type": "object",
                             "properties": {
@@ -355,7 +356,7 @@ impl McpServer {
                     },
                     {
                         "name": "identity_show",
-                        "description": "Show identity information (public document, no passphrase required).",
+                        "description": "Show identity information (public document, no passphrase required)",
                         "inputSchema": {
                             "type": "object",
                             "properties": {
@@ -368,7 +369,7 @@ impl McpServer {
                     },
                     {
                         "name": "action_sign",
-                        "description": "Sign an action and create a verifiable receipt.",
+                        "description": "Sign an action and create a verifiable receipt",
                         "inputSchema": {
                             "type": "object",
                             "required": ["action"],
@@ -399,7 +400,7 @@ impl McpServer {
                     },
                     {
                         "name": "receipt_verify",
-                        "description": "Verify the cryptographic signature on a receipt.",
+                        "description": "Verify the cryptographic signature on a receipt",
                         "inputSchema": {
                             "type": "object",
                             "required": ["receipt_id"],
@@ -413,7 +414,7 @@ impl McpServer {
                     },
                     {
                         "name": "trust_grant",
-                        "description": "Grant trust (capabilities) to another identity.",
+                        "description": "Grant trust (capabilities) to another identity",
                         "inputSchema": {
                             "type": "object",
                             "required": ["grantee", "capabilities"],
@@ -449,7 +450,7 @@ impl McpServer {
                     },
                     {
                         "name": "trust_revoke",
-                        "description": "Revoke a trust grant.",
+                        "description": "Revoke a trust grant",
                         "inputSchema": {
                             "type": "object",
                             "required": ["trust_id"],
@@ -472,7 +473,7 @@ impl McpServer {
                     },
                     {
                         "name": "trust_verify",
-                        "description": "Verify whether a trust grant is currently valid for a capability.",
+                        "description": "Verify whether a trust grant is currently valid for a capability",
                         "inputSchema": {
                             "type": "object",
                             "required": ["trust_id"],
@@ -490,7 +491,7 @@ impl McpServer {
                     },
                     {
                         "name": "trust_list",
-                        "description": "List trust grants (granted by or received by this identity).",
+                        "description": "List trust grants (granted by or received by this identity)",
                         "inputSchema": {
                             "type": "object",
                             "properties": {
@@ -508,7 +509,7 @@ impl McpServer {
                     },
                     {
                         "name": "receipt_list",
-                        "description": "List action receipts with optional filters.",
+                        "description": "List action receipts with optional filters",
                         "inputSchema": {
                             "type": "object",
                             "properties": {
@@ -529,7 +530,7 @@ impl McpServer {
                     },
                     {
                         "name": "identity_health",
-                        "description": "Check system health: identity files, receipt store, trust store.",
+                        "description": "Check system health: identity files, receipt store, trust store",
                         "inputSchema": {
                             "type": "object",
                             "properties": {}
@@ -537,7 +538,7 @@ impl McpServer {
                     },
                     {
                         "name": "continuity_record",
-                        "description": "Record an experience event in the continuity chain.",
+                        "description": "Record an experience event in the continuity chain",
                         "inputSchema": {
                             "type": "object",
                             "required": ["content_hash"],
@@ -563,7 +564,7 @@ impl McpServer {
                     },
                     {
                         "name": "continuity_anchor",
-                        "description": "Create a continuity anchor (checkpoint) at the current state.",
+                        "description": "Create a continuity anchor (checkpoint) at the current state",
                         "inputSchema": {
                             "type": "object",
                             "properties": {
@@ -580,7 +581,7 @@ impl McpServer {
                     },
                     {
                         "name": "continuity_heartbeat",
-                        "description": "Create a heartbeat record indicating the agent is alive.",
+                        "description": "Create a heartbeat record indicating the agent is alive",
                         "inputSchema": {
                             "type": "object",
                             "properties": {
@@ -597,7 +598,7 @@ impl McpServer {
                     },
                     {
                         "name": "continuity_status",
-                        "description": "Get the continuity status for an identity.",
+                        "description": "Get the continuity status for an identity",
                         "inputSchema": {
                             "type": "object",
                             "properties": {
@@ -610,7 +611,7 @@ impl McpServer {
                     },
                     {
                         "name": "continuity_gaps",
-                        "description": "Detect gaps in the experience chain.",
+                        "description": "Detect gaps in the experience chain",
                         "inputSchema": {
                             "type": "object",
                             "properties": {
@@ -627,7 +628,7 @@ impl McpServer {
                     },
                     {
                         "name": "spawn_create",
-                        "description": "Spawn a child identity with bounded authority.",
+                        "description": "Spawn a child identity with bounded authority",
                         "inputSchema": {
                             "type": "object",
                             "required": ["purpose", "authority"],
@@ -658,7 +659,7 @@ impl McpServer {
                     },
                     {
                         "name": "spawn_terminate",
-                        "description": "Terminate a spawned child identity.",
+                        "description": "Terminate a spawned child identity",
                         "inputSchema": {
                             "type": "object",
                             "required": ["spawn_id"],
@@ -684,7 +685,7 @@ impl McpServer {
                     },
                     {
                         "name": "spawn_list",
-                        "description": "List spawned child identities.",
+                        "description": "List spawned child identities",
                         "inputSchema": {
                             "type": "object",
                             "properties": {
@@ -701,7 +702,7 @@ impl McpServer {
                     },
                     {
                         "name": "spawn_lineage",
-                        "description": "Get lineage information for an identity.",
+                        "description": "Get lineage information for an identity",
                         "inputSchema": {
                             "type": "object",
                             "properties": {
@@ -714,7 +715,7 @@ impl McpServer {
                     },
                     {
                         "name": "spawn_authority",
-                        "description": "Get effective authority for an identity (bounded by lineage).",
+                        "description": "Get effective authority for an identity (bounded by lineage)",
                         "inputSchema": {
                             "type": "object",
                             "properties": {
@@ -727,7 +728,7 @@ impl McpServer {
                     },
                     {
                         "name": "competence_record",
-                        "description": "Record a competence attempt outcome (success, failure, partial).",
+                        "description": "Record a competence attempt outcome (success, failure, partial)",
                         "inputSchema": {
                             "type": "object",
                             "properties": {
@@ -742,7 +743,7 @@ impl McpServer {
                     },
                     {
                         "name": "competence_show",
-                        "description": "Get competence record for a domain.",
+                        "description": "Get competence record for a domain",
                         "inputSchema": {
                             "type": "object",
                             "properties": {
@@ -752,7 +753,7 @@ impl McpServer {
                     },
                     {
                         "name": "competence_prove",
-                        "description": "Generate a competence proof for a domain.",
+                        "description": "Generate a competence proof for a domain",
                         "inputSchema": {
                             "type": "object",
                             "properties": {
@@ -765,7 +766,7 @@ impl McpServer {
                     },
                     {
                         "name": "competence_verify",
-                        "description": "Verify a competence proof.",
+                        "description": "Verify a competence proof",
                         "inputSchema": {
                             "type": "object",
                             "properties": {
@@ -776,7 +777,7 @@ impl McpServer {
                     },
                     {
                         "name": "competence_list",
-                        "description": "List all competence domains for the identity.",
+                        "description": "List all competence domains for the identity",
                         "inputSchema": {
                             "type": "object",
                             "properties": {}
@@ -784,7 +785,7 @@ impl McpServer {
                     },
                     {
                         "name": "negative_prove",
-                        "description": "Generate a negative capability proof (prove agent cannot do something).",
+                        "description": "Generate a negative capability proof (prove agent cannot do something)",
                         "inputSchema": {
                             "type": "object",
                             "properties": {
@@ -795,7 +796,7 @@ impl McpServer {
                     },
                     {
                         "name": "negative_verify",
-                        "description": "Verify a negative capability proof.",
+                        "description": "Verify a negative capability proof",
                         "inputSchema": {
                             "type": "object",
                             "properties": {
@@ -806,7 +807,7 @@ impl McpServer {
                     },
                     {
                         "name": "negative_declare",
-                        "description": "Create a voluntary negative declaration (self-imposed restriction).",
+                        "description": "Create a voluntary negative declaration (self-imposed restriction)",
                         "inputSchema": {
                             "type": "object",
                             "properties": {
@@ -819,7 +820,7 @@ impl McpServer {
                     },
                     {
                         "name": "negative_list",
-                        "description": "List all negative declarations for the identity.",
+                        "description": "List all negative declarations for the identity",
                         "inputSchema": {
                             "type": "object",
                             "properties": {}
@@ -827,7 +828,7 @@ impl McpServer {
                     },
                     {
                         "name": "negative_check",
-                        "description": "Quick check if a capability is structurally impossible.",
+                        "description": "Quick check if a capability is structurally impossible",
                         "inputSchema": {
                             "type": "object",
                             "properties": {
@@ -838,7 +839,7 @@ impl McpServer {
                     },
                     {
                         "name": "action_context",
-                        "description": "Log the intent and context behind identity actions. Call this to record WHY you are performing identity operations.",
+                        "description": "Log the intent and context behind identity actions. Call this to record WHY you are performing identity operations",
                         "inputSchema": {
                             "type": "object",
                             "properties": {
@@ -866,7 +867,7 @@ impl McpServer {
                     // ── V2: Grounding (anti-hallucination) ─────────────────────────
                     {
                         "name": "identity_ground",
-                        "description": "Verify an authority/action claim has backing in trust grants, receipts, or competence records. Prevents hallucination about permissions.",
+                        "description": "Verify an authority/action claim has backing in trust grants, receipts, or competence records. Prevents hallucination about permissions",
                         "inputSchema": {
                             "type": "object",
                             "required": ["claim"],
@@ -878,7 +879,7 @@ impl McpServer {
                     },
                     {
                         "name": "identity_evidence",
-                        "description": "Get detailed evidence for an identity claim from trust grants, receipts, and competence records.",
+                        "description": "Get detailed evidence for an identity claim from trust grants, receipts, and competence records",
                         "inputSchema": {
                             "type": "object",
                             "required": ["query"],
@@ -891,7 +892,7 @@ impl McpServer {
                     },
                     {
                         "name": "identity_suggest",
-                        "description": "Find similar grants, receipts, or competence records when a claim doesn't match exactly.",
+                        "description": "Find similar grants, receipts, or competence records when a claim doesn't match exactly",
                         "inputSchema": {
                             "type": "object",
                             "required": ["query"],
@@ -905,7 +906,7 @@ impl McpServer {
                     // ── V2: Multi-context workspaces ──────────────────────────────
                     {
                         "name": "identity_workspace_create",
-                        "description": "Create a multi-identity workspace for comparing permissions across agents.",
+                        "description": "Create a multi-identity workspace for comparing permissions across agents",
                         "inputSchema": {
                             "type": "object",
                             "required": ["name"],
@@ -916,7 +917,7 @@ impl McpServer {
                     },
                     {
                         "name": "identity_workspace_add",
-                        "description": "Add an identity directory to a workspace for cross-identity comparison.",
+                        "description": "Add an identity directory to a workspace for cross-identity comparison",
                         "inputSchema": {
                             "type": "object",
                             "required": ["workspace_id", "path"],
@@ -930,7 +931,7 @@ impl McpServer {
                     },
                     {
                         "name": "identity_workspace_list",
-                        "description": "List loaded identity contexts in a workspace.",
+                        "description": "List loaded identity contexts in a workspace",
                         "inputSchema": {
                             "type": "object",
                             "required": ["workspace_id"],
@@ -941,7 +942,7 @@ impl McpServer {
                     },
                     {
                         "name": "identity_workspace_query",
-                        "description": "Query across all identity contexts in a workspace.",
+                        "description": "Query across all identity contexts in a workspace",
                         "inputSchema": {
                             "type": "object",
                             "required": ["workspace_id", "query"],
@@ -954,7 +955,7 @@ impl McpServer {
                     },
                     {
                         "name": "identity_workspace_compare",
-                        "description": "Compare permissions or capabilities across identity contexts.",
+                        "description": "Compare permissions or capabilities across identity contexts",
                         "inputSchema": {
                             "type": "object",
                             "required": ["workspace_id", "item"],
@@ -967,7 +968,7 @@ impl McpServer {
                     },
                     {
                         "name": "identity_workspace_xref",
-                        "description": "Cross-reference a permission across identity contexts.",
+                        "description": "Cross-reference a permission across identity contexts",
                         "inputSchema": {
                             "type": "object",
                             "required": ["workspace_id", "item"],
@@ -977,9 +978,15 @@ impl McpServer {
                             }
                         }
                     }
-                ]
-            }),
-        )
+                ]);
+        // V3: Append 58 invention tool definitions
+        if let Value::Array(ref mut arr) = tools_list {
+            arr.extend(invention_trust_dynamics::all_definitions());
+            arr.extend(invention_accountability::all_definitions());
+            arr.extend(invention_federation::all_definitions());
+            arr.extend(invention_resilience::all_definitions());
+        }
+        ok_result(id, json!({ "tools": tools_list }))
     }
 
     // ── tools/call ────────────────────────────────────────────────────────────
@@ -1038,7 +1045,20 @@ impl McpServer {
             "identity_workspace_query" => self.tool_identity_workspace_query(id.clone(), &args),
             "identity_workspace_compare" => self.tool_identity_workspace_compare(id.clone(), &args),
             "identity_workspace_xref" => self.tool_identity_workspace_xref(id.clone(), &args),
-            _ => return rpc_error(id, -32602, format!("unknown tool: {tool_name}")),
+            // V3: 16 Trust Inventions (58 tools across 4 modules)
+            other => {
+                if let Some(r) = invention_trust_dynamics::try_execute(self, other, id.clone(), &args) {
+                    r
+                } else if let Some(r) = invention_accountability::try_execute(self, other, id.clone(), &args) {
+                    r
+                } else if let Some(r) = invention_federation::try_execute(self, other, id.clone(), &args) {
+                    r
+                } else if let Some(r) = invention_resilience::try_execute(self, other, id.clone(), &args) {
+                    r
+                } else {
+                    return rpc_error(id, -32803, format!("Tool not found: {tool_name}"));
+                }
+            }
         };
 
         // Auto-log the tool call.
@@ -4012,8 +4032,8 @@ mod tests {
         assert!(names.contains(&"identity_workspace_query"));
         assert!(names.contains(&"identity_workspace_compare"));
         assert!(names.contains(&"identity_workspace_xref"));
-        // 30 original + 1 action_context + 3 grounding + 6 workspace = 40
-        assert_eq!(tools.len(), 40);
+        // 30 original + 1 action_context + 3 grounding + 6 workspace + 58 inventions = 98
+        assert_eq!(tools.len(), 98);
     }
 
     // ── resources/list ────────────────────────────────────────────────────────
