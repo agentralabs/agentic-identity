@@ -153,7 +153,7 @@ impl IdentitySister {
     }
 
     /// Try to discover an existing identity from .aid files.
-    fn discover_identity(dir: &PathBuf) -> Option<IdentityId> {
+    fn discover_identity(dir: &std::path::Path) -> Option<IdentityId> {
         let identity_dir = dir.join("identity");
         if !identity_dir.exists() {
             return None;
@@ -252,7 +252,7 @@ impl IdentitySister {
             (micros / 1_000_000) as i64,
             ((micros % 1_000_000) * 1000) as u32,
         )
-        .unwrap_or_else(|| Utc::now())
+        .unwrap_or_else(Utc::now)
     }
 }
 
@@ -924,6 +924,7 @@ impl Queryable for IdentitySister {
 mod tests {
     use super::*;
     use crate::identity::IdentityAnchor;
+    use crate::receipt::{ActionContent, ActionType};
     use tempfile::TempDir;
 
     /// Create a test IdentitySister backed by a temp directory.
