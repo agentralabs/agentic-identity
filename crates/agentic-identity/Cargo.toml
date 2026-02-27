@@ -21,6 +21,10 @@ default = ["cli"]
 cli = ["dep:clap", "dep:env_logger", "dep:anyhow"]
 
 [dependencies]
+# Contracts (shared sister traits)
+agentic-contracts.workspace = true
+blake3 = "1.5"
+
 ed25519-dalek.workspace = true
 x25519-dalek.workspace = true
 hkdf.workspace = true
