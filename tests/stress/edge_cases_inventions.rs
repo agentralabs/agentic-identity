@@ -2030,7 +2030,8 @@ fn inv_cross_negative_declaration_with_multiple_capabilities() {
 
     // Each declared capability should be impossible
     for cap in &decl.cannot_do {
-        let result = negative::is_impossible(&anchor.id(), cap, &[], &[], std::slice::from_ref(&decl));
+        let result =
+            negative::is_impossible(&anchor.id(), cap, &[], &[], std::slice::from_ref(&decl));
         assert!(result.is_some(), "Declared '{}' should be impossible", cap);
     }
 
