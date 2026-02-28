@@ -108,6 +108,31 @@ All tools exposed by the `agentic-identity-mcp` MCP server:
 | `identity_workspace_compare` | Compare permissions across identity contexts |
 | `identity_workspace_xref` | Cross-reference a permission across contexts |
 
+### Compact Facade Tools (v0.3+)
+
+Use these to keep MCP tool surfaces small while preserving backward compatibility:
+
+| Tool | Description |
+|------|-------------|
+| `identity_core` | Unified core identity operations via `operation` |
+| `identity_actions` | Unified action/receipt/session operations via `operation` |
+| `identity_trust` | Unified trust operations via `operation` |
+| `identity_continuity` | Unified continuity operations via `operation` |
+| `identity_spawn` | Unified spawn operations via `operation` |
+| `identity_competence` | Unified competence operations via `operation` |
+| `identity_negative` | Unified negative-capability operations via `operation` |
+| `identity_grounding` | Unified grounding operations via `operation` |
+| `identity_workspace` | Unified workspace operations via `operation` |
+| `identity_inventions` | Unified advanced invention operations via `operation` |
+
+Compact list mode:
+
+```bash
+export AID_MCP_TOOL_SURFACE=compact
+```
+
+In compact mode, `tools/list` returns only the 10 facade tools above, while all legacy tool names remain callable.
+
 ## Environment Variables
 
 | Variable | Default | Description |

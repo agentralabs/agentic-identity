@@ -304,6 +304,304 @@ fn read_env_f64_any(names: &[&str], default: f64) -> f64 {
         .unwrap_or(default)
 }
 
+fn mcp_tool_surface_is_compact() -> bool {
+    read_env_string_any(&["AID_MCP_TOOL_SURFACE", "MCP_TOOL_SURFACE"])
+        .map(|value| value.eq_ignore_ascii_case("compact"))
+        .unwrap_or(false)
+}
+
+fn compact_op_schema(ops: &[String], description: &str) -> Value {
+    json!({
+        "type": "object",
+        "required": ["operation"],
+        "properties": {
+            "operation": {
+                "type": "string",
+                "enum": ops,
+                "description": description
+            },
+            "params": {
+                "type": "object",
+                "description": "Arguments for the selected operation"
+            }
+        }
+    })
+}
+
+fn invention_tool_names() -> Vec<String> {
+    let mut names = Vec::new();
+    for defs in [
+        invention_trust_dynamics::all_definitions(),
+        invention_accountability::all_definitions(),
+        invention_federation::all_definitions(),
+        invention_resilience::all_definitions(),
+    ] {
+        for def in defs {
+            if let Some(name) = def.get("name").and_then(|n| n.as_str()) {
+                names.push(name.to_string());
+            }
+        }
+    }
+    names
+}
+
+fn compact_tool_definitions() -> Vec<Value> {
+    vec![
+        json!({
+            "name": "identity_core",
+            "description": "Compact core identity facade",
+            "inputSchema": compact_op_schema(
+                &vec![
+                    "identity_create".to_string(),
+                    "identity_show".to_string(),
+                    "identity_health".to_string(),
+                ],
+                "Core identity operation",
+            ),
+        }),
+        json!({
+            "name": "identity_actions",
+            "description": "Compact actions/session facade",
+            "inputSchema": compact_op_schema(
+                &vec![
+                    "action_sign".to_string(),
+                    "action_context".to_string(),
+                    "receipt_verify".to_string(),
+                    "receipt_list".to_string(),
+                    "session_start".to_string(),
+                    "session_end".to_string(),
+                    "identity_session_resume".to_string(),
+                ],
+                "Identity action operation",
+            ),
+        }),
+        json!({
+            "name": "identity_trust",
+            "description": "Compact trust facade",
+            "inputSchema": compact_op_schema(
+                &vec![
+                    "trust_grant".to_string(),
+                    "trust_revoke".to_string(),
+                    "trust_verify".to_string(),
+                    "trust_list".to_string(),
+                ],
+                "Trust operation",
+            ),
+        }),
+        json!({
+            "name": "identity_continuity",
+            "description": "Compact continuity facade",
+            "inputSchema": compact_op_schema(
+                &vec![
+                    "continuity_record".to_string(),
+                    "continuity_anchor".to_string(),
+                    "continuity_heartbeat".to_string(),
+                    "continuity_status".to_string(),
+                    "continuity_gaps".to_string(),
+                ],
+                "Continuity operation",
+            ),
+        }),
+        json!({
+            "name": "identity_spawn",
+            "description": "Compact spawn facade",
+            "inputSchema": compact_op_schema(
+                &vec![
+                    "spawn_create".to_string(),
+                    "spawn_terminate".to_string(),
+                    "spawn_list".to_string(),
+                    "spawn_lineage".to_string(),
+                    "spawn_authority".to_string(),
+                ],
+                "Spawn operation",
+            ),
+        }),
+        json!({
+            "name": "identity_competence",
+            "description": "Compact competence facade",
+            "inputSchema": compact_op_schema(
+                &vec![
+                    "competence_record".to_string(),
+                    "competence_show".to_string(),
+                    "competence_prove".to_string(),
+                    "competence_verify".to_string(),
+                    "competence_list".to_string(),
+                ],
+                "Competence operation",
+            ),
+        }),
+        json!({
+            "name": "identity_negative",
+            "description": "Compact negative-capability facade",
+            "inputSchema": compact_op_schema(
+                &vec![
+                    "negative_prove".to_string(),
+                    "negative_verify".to_string(),
+                    "negative_declare".to_string(),
+                    "negative_list".to_string(),
+                    "negative_check".to_string(),
+                ],
+                "Negative capability operation",
+            ),
+        }),
+        json!({
+            "name": "identity_grounding",
+            "description": "Compact grounding facade",
+            "inputSchema": compact_op_schema(
+                &vec![
+                    "identity_ground".to_string(),
+                    "identity_evidence".to_string(),
+                    "identity_suggest".to_string(),
+                ],
+                "Grounding operation",
+            ),
+        }),
+        json!({
+            "name": "identity_workspace",
+            "description": "Compact workspace facade",
+            "inputSchema": compact_op_schema(
+                &vec![
+                    "identity_workspace_create".to_string(),
+                    "identity_workspace_add".to_string(),
+                    "identity_workspace_list".to_string(),
+                    "identity_workspace_query".to_string(),
+                    "identity_workspace_compare".to_string(),
+                    "identity_workspace_xref".to_string(),
+                ],
+                "Workspace operation",
+            ),
+        }),
+        json!({
+            "name": "identity_inventions",
+            "description": "Compact inventions facade for all advanced identity tools",
+            "inputSchema": compact_op_schema(
+                &invention_tool_names(),
+                "Identity invention operation",
+            ),
+        }),
+    ]
+}
+
+fn decode_compact_operation(args: Value) -> Result<(String, Value), String> {
+    let obj = args
+        .as_object()
+        .ok_or_else(|| "arguments must be an object".to_string())?;
+
+    let operation = obj
+        .get("operation")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| "'operation' is required".to_string())?
+        .to_string();
+
+    if let Some(params) = obj.get("params") {
+        return Ok((operation, params.clone()));
+    }
+
+    let mut passthrough = obj.clone();
+    passthrough.remove("operation");
+    Ok((operation, Value::Object(passthrough)))
+}
+
+fn resolve_compact_tool(group: &str, operation: &str) -> Option<String> {
+    let allowed = match group {
+        "identity_core" => matches!(
+            operation,
+            "identity_create" | "identity_show" | "identity_health"
+        ),
+        "identity_actions" => matches!(
+            operation,
+            "action_sign"
+                | "action_context"
+                | "receipt_verify"
+                | "receipt_list"
+                | "session_start"
+                | "session_end"
+                | "identity_session_resume"
+        ),
+        "identity_trust" => matches!(
+            operation,
+            "trust_grant" | "trust_revoke" | "trust_verify" | "trust_list"
+        ),
+        "identity_continuity" => matches!(
+            operation,
+            "continuity_record"
+                | "continuity_anchor"
+                | "continuity_heartbeat"
+                | "continuity_status"
+                | "continuity_gaps"
+        ),
+        "identity_spawn" => matches!(
+            operation,
+            "spawn_create" | "spawn_terminate" | "spawn_list" | "spawn_lineage" | "spawn_authority"
+        ),
+        "identity_competence" => matches!(
+            operation,
+            "competence_record"
+                | "competence_show"
+                | "competence_prove"
+                | "competence_verify"
+                | "competence_list"
+        ),
+        "identity_negative" => matches!(
+            operation,
+            "negative_prove"
+                | "negative_verify"
+                | "negative_declare"
+                | "negative_list"
+                | "negative_check"
+        ),
+        "identity_grounding" => {
+            matches!(
+                operation,
+                "identity_ground" | "identity_evidence" | "identity_suggest"
+            )
+        }
+        "identity_workspace" => matches!(
+            operation,
+            "identity_workspace_create"
+                | "identity_workspace_add"
+                | "identity_workspace_list"
+                | "identity_workspace_query"
+                | "identity_workspace_compare"
+                | "identity_workspace_xref"
+        ),
+        "identity_inventions" => invention_tool_names().iter().any(|n| n == operation),
+        _ => return None,
+    };
+
+    if allowed {
+        Some(operation.to_string())
+    } else {
+        None
+    }
+}
+
+fn normalize_compact_tool_call(
+    requested_tool_name: &str,
+    arguments: Value,
+) -> Result<(String, Value), String> {
+    if !matches!(
+        requested_tool_name,
+        "identity_core"
+            | "identity_actions"
+            | "identity_trust"
+            | "identity_continuity"
+            | "identity_spawn"
+            | "identity_competence"
+            | "identity_negative"
+            | "identity_grounding"
+            | "identity_workspace"
+            | "identity_inventions"
+    ) {
+        return Ok((requested_tool_name.to_string(), arguments));
+    }
+
+    let (operation, params) = decode_compact_operation(arguments)?;
+    let resolved = resolve_compact_tool(requested_tool_name, &operation)
+        .ok_or_else(|| format!("Unknown {requested_tool_name} operation: {operation}"))?;
+    Ok((resolved, params))
+}
+
 fn dir_size_bytes(path: &PathBuf) -> u64 {
     fn walk(path: &std::path::Path) -> u64 {
         let Ok(entries) = std::fs::read_dir(path) else {
@@ -404,6 +702,10 @@ impl McpServer {
     // ── tools/list ────────────────────────────────────────────────────────────
 
     fn handle_tools_list(&self, id: Value) -> Value {
+        if mcp_tool_surface_is_compact() {
+            return ok_result(id, json!({ "tools": compact_tool_definitions() }));
+        }
+
         let mut tools_list = json!([
             {
                 "name": "identity_create",
@@ -1087,11 +1389,15 @@ impl McpServer {
     // ── tools/call ────────────────────────────────────────────────────────────
 
     fn handle_tools_call(&mut self, id: Value, params: &Value) -> Value {
-        let tool_name = match params.get("name").and_then(|n| n.as_str()) {
+        let requested_tool_name = match params.get("name").and_then(|n| n.as_str()) {
             Some(n) => n.to_string(),
             None => return rpc_error(id, -32602, "missing tool name"),
         };
-        let args = params.get("arguments").cloned().unwrap_or(json!({}));
+        let raw_args = params.get("arguments").cloned().unwrap_or(json!({}));
+        let (tool_name, args) = match normalize_compact_tool_call(&requested_tool_name, raw_args) {
+            Ok(mapped) => mapped,
+            Err(message) => return rpc_error(id, -32602, message),
+        };
 
         // Handle action_context separately (it mutates operation_log directly).
         if tool_name == "action_context" {
@@ -4265,6 +4571,68 @@ mod tests {
         assert!(names.contains(&"identity_workspace_xref"));
         // 30 original + 1 action_context + 3 session + 3 grounding + 6 workspace + 58 inventions = 101
         assert_eq!(tools.len(), 101);
+    }
+
+    #[test]
+    fn test_compact_facade_definitions_have_expected_surface() {
+        init();
+        let defs = compact_tool_definitions();
+        let names: Vec<&str> = defs
+            .iter()
+            .filter_map(|d| d.get("name").and_then(|v| v.as_str()))
+            .collect();
+        assert_eq!(defs.len(), 10);
+        assert!(names.contains(&"identity_core"));
+        assert!(names.contains(&"identity_actions"));
+        assert!(names.contains(&"identity_trust"));
+        assert!(names.contains(&"identity_continuity"));
+        assert!(names.contains(&"identity_spawn"));
+        assert!(names.contains(&"identity_competence"));
+        assert!(names.contains(&"identity_negative"));
+        assert!(names.contains(&"identity_grounding"));
+        assert!(names.contains(&"identity_workspace"));
+        assert!(names.contains(&"identity_inventions"));
+    }
+
+    #[test]
+    fn test_compact_core_identity_create_routes_to_legacy_tool() {
+        init();
+        let (mut server, _tmp) = test_server();
+        let req = json!({
+            "jsonrpc":"2.0","id":301,
+            "method":"tools/call",
+            "params":{
+                "name":"identity_core",
+                "arguments":{
+                    "operation":"identity_create",
+                    "params":{}
+                }
+            }
+        });
+        let resp = server.handle_request(req);
+        assert!(is_ok(&resp), "expected success: {resp}");
+        let text = tool_text(&resp);
+        assert!(
+            text.contains("Created identity"),
+            "expected identity output: {text}"
+        );
+    }
+
+    #[test]
+    fn test_compact_unknown_operation_returns_invalid_params() {
+        init();
+        let (mut server, _tmp) = test_server();
+        let req = json!({
+            "jsonrpc":"2.0","id":302,
+            "method":"tools/call",
+            "params":{
+                "name":"identity_core",
+                "arguments":{"operation":"not_a_real_operation"}
+            }
+        });
+        let resp = server.handle_request(req);
+        assert!(resp.get("error").is_some(), "expected error: {resp}");
+        assert_eq!(resp["error"]["code"], -32602);
     }
 
     // ── resources/list ────────────────────────────────────────────────────────
