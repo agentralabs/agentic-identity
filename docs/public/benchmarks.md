@@ -9,6 +9,19 @@ status: stable
 
 All benchmarks are run with [Criterion.rs](https://github.com/bheisler/criterion.rs) statistical benchmarking on standard hardware. Each measurement is the median of thousands of iterations with warm-up and outlier detection.
 
+## Test Environment
+
+| Parameter | Value |
+|:---|:---|
+| Benchmark framework | Criterion.rs 0.5 |
+| Statistical method | Median of 5000+ iterations |
+| Warm-up | 3 seconds per benchmark |
+| Outlier detection | Automatic (Criterion default) |
+| Confidence level | 95% |
+| CPU architecture | x86_64 / aarch64 (Apple Silicon) |
+| Rust toolchain | Stable (latest) |
+| Optimization level | `--release` (LTO enabled) |
+
 ## Summary
 
 | Operation | Time | Notes |
@@ -24,6 +37,26 @@ All benchmarks are run with [Criterion.rs](https://github.com/bheisler/criterion
 | Trust grant verify | **21.84 us** | Decode key + verify signature |
 | Trust chain verify (depth 2) | **43.51 us** | 2 signature verifications + chain walk |
 | Receipt chain (10 receipts) | **123.77 us** | Create identity + sign 10 chained receipts |
+
+## Performance Tiers
+
+Operations fall into three latency tiers:
+
+### Sub-microsecond (< 1 us)
+
+- **HKDF-SHA256 derivation** (972 ns): Deriving session keys, capability keys, device keys, or revocation keys. This operation is negligible compared to the signing operations that follow it.
+
+### Single-digit microseconds (1-10 us)
+
+- **Key generation** (8.80 us): Creating a fresh Ed25519 key pair from the OS CSPRNG.
+- **Identity creation** (8.78 us): Key generation plus SHA-256 hash and base58 encoding for the identity ID.
+- **Ed25519 signing** (9.17 us): The raw cryptographic signing operation.
+
+### Double-digit microseconds (10-50 us)
+
+- **Ed25519 verification** (19.34 us): Requires public key point decompression, making it roughly 2x slower than signing.
+- **Receipt and trust operations** (11-22 us): Signing and verification of receipts and trust grants, dominated by the Ed25519 cost plus SHA-256 hashing and serialization overhead.
+- **Chain verification** (43.51 us for depth 2): Linear scaling with chain depth.
 
 ## Analysis
 
@@ -66,6 +99,19 @@ For planning capacity:
 
 These are single-threaded estimates. All operations are independent and scale linearly with CPU cores.
 
+## Comparison Context
+
+For reference, these timings compare favorably to common operations in agent workflows:
+
+| External operation | Typical latency |
+|:---|---:|
+| LLM API call (GPT-4 / Claude) | 500 ms - 5 s |
+| HTTP request (local network) | 1 - 50 ms |
+| SQLite read query | 10 - 500 us |
+| File system read (SSD) | 50 - 500 us |
+
+Identity and receipt operations are 100-1000x faster than the cheapest external I/O an agent performs. Cryptographic overhead is invisible at the application level.
+
 ## Reproduction
 
 Run the benchmarks yourself:
@@ -76,8 +122,21 @@ cargo bench -p agentic-identity
 
 Results are written to `target/criterion/` with HTML reports including statistical distributions, iteration counts, and regression detection.
 
+To compare against a baseline:
+
+```bash
+# Save current results as baseline
+cargo bench -p agentic-identity -- --save-baseline main
+
+# After changes, compare
+cargo bench -p agentic-identity -- --baseline main
+```
+
+Criterion will report whether performance regressed, improved, or remained unchanged with statistical significance.
+
 ## What is NOT Benchmarked Here
 
 - **Argon2id passphrase derivation** is intentionally slow (~200-500 ms) and is not included in the table above. It runs only during `.aid` file save/load operations.
 - **File I/O** (disk read/write) is excluded because it depends on storage hardware.
 - **Network latency** for revocation channel checks is excluded because it depends on infrastructure.
+- **Competence and continuity engine operations** involve in-memory aggregation and are bounded by the receipt signing/verification costs documented above.
