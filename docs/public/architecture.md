@@ -43,7 +43,7 @@ The MCP server binary (`agentic-identity-mcp`).
 
 - JSON-RPC 2.0 over stdio
 - 35+ MCP tools spanning identity, trust, receipts, continuity, spawn, competence, negative proofs, grounding, and workspaces
-- Additional invention modules: trust dynamics, accountability, federation, resilience
+- Additional advanced modules: trust dynamics, accountability, federation, resilience
 - MCP resources via `aid://` URI scheme
 - Auto-session lifecycle management with operation logging
 - Content-Length framing with JSON-RPC request routing

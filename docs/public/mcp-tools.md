@@ -4,7 +4,7 @@ status: stable
 
 # MCP Tools
 
-AgenticIdentity exposes 35+ core tools through the MCP protocol via `agentic-identity-mcp`, plus additional invention modules for trust dynamics, accountability, federation, and resilience.
+AgenticIdentity exposes 35+ core tools through the MCP protocol via `agentic-identity-mcp`, plus additional advanced modules for trust dynamics, accountability, federation, and resilience.
 
 ## Identity Tools
 
