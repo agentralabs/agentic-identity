@@ -409,6 +409,16 @@ enum Commands {
         subcommand: WorkspaceCommands,
     },
 
+    /// Runtime sync workflow for scanning workspace identity files
+    RuntimeSync {
+        /// Workspace root to scan
+        #[arg(long, default_value = ".")]
+        workspace: String,
+        /// Maximum directory depth for scan
+        #[arg(long, default_value_t = 4)]
+        max_depth: usize,
+    },
+
     /// Manage receipts
     Receipt {
         #[command(subcommand)]
@@ -822,6 +832,10 @@ fn main() {
         Commands::Evidence { query, limit } => cmd_evidence_query(&query, limit),
         Commands::Suggest { query, limit } => cmd_suggest_query(&query, limit),
         Commands::Workspace { subcommand } => cmd_workspace(subcommand),
+        Commands::RuntimeSync {
+            workspace,
+            max_depth,
+        } => cmd_runtime_sync(&workspace, max_depth),
         Commands::Receipt { subcommand } => match subcommand {
             ReceiptCommands::List {
                 actor,
@@ -1892,6 +1906,67 @@ fn cmd_workspace(subcommand: WorkspaceCommands) -> Result<()> {
             Ok(())
         }
     }
+}
+
+fn cmd_runtime_sync(workspace: &str, max_depth: usize) -> Result<()> {
+    let root = PathBuf::from(workspace);
+    if !root.exists() {
+        return Err(anyhow!("workspace root does not exist: {}", workspace));
+    }
+
+    let mut files = Vec::new();
+    collect_files(&root, &mut files, max_depth.max(1))?;
+
+    let mut report_rows = Vec::new();
+    let mut total_size_bytes = 0u64;
+    let mut tracked_files = 0usize;
+
+    for path in files {
+        let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
+        if !matches!(ext, "aid" | "json") {
+            continue;
+        }
+        tracked_files += 1;
+        match std::fs::metadata(&path) {
+            Ok(meta) => {
+                let size = meta.len();
+                total_size_bytes = total_size_bytes.saturating_add(size);
+                report_rows.push(serde_json::json!({
+                    "path": path.display().to_string(),
+                    "size_bytes": size
+                }));
+            }
+            Err(e) => {
+                report_rows.push(serde_json::json!({
+                    "path": path.display().to_string(),
+                    "error": e.to_string()
+                }));
+            }
+        }
+    }
+
+    let report = serde_json::json!({
+        "mode": "runtime-sync",
+        "workspace": workspace,
+        "max_depth": max_depth,
+        "tracked_files": tracked_files,
+        "total_size_bytes": total_size_bytes,
+        "synced_at": chrono::Utc::now().to_rfc3339(),
+        "files": report_rows
+    });
+
+    write_runtime_sync_snapshot(&report)?;
+    println!("{}", serde_json::to_string_pretty(&report)?);
+    Ok(())
+}
+
+fn write_runtime_sync_snapshot(report: &serde_json::Value) -> Result<()> {
+    let path = agentic_dir().join("identity").join("runtime-sync.json");
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    std::fs::write(path, serde_json::to_string_pretty(report)?)?;
+    Ok(())
 }
 
 /// `aid receipt list [--actor IDENTITY] [--type TYPE] [--limit N]`

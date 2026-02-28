@@ -260,6 +260,70 @@ fn now_secs() -> u64 {
         .as_secs()
 }
 
+fn truncate_text(input: String, max_len: usize) -> String {
+    if input.len() <= max_len {
+        input
+    } else {
+        format!("{}...", &input[..max_len])
+    }
+}
+
+fn read_env_string_any(names: &[&str]) -> Option<String> {
+    names
+        .iter()
+        .find_map(|name| std::env::var(name).ok())
+        .map(|value| value.trim().to_string())
+}
+
+fn read_env_bool_any(names: &[&str], default: bool) -> bool {
+    read_env_string_any(names)
+        .map(|value| {
+            matches!(
+                value.to_ascii_lowercase().as_str(),
+                "1" | "true" | "yes" | "on"
+            )
+        })
+        .unwrap_or(default)
+}
+
+fn read_env_usize_any(names: &[&str], default: usize) -> usize {
+    read_env_string_any(names)
+        .and_then(|value| value.parse::<usize>().ok())
+        .unwrap_or(default)
+}
+
+fn read_env_u64_any(names: &[&str], default: u64) -> u64 {
+    read_env_string_any(names)
+        .and_then(|value| value.parse::<u64>().ok())
+        .unwrap_or(default)
+}
+
+fn read_env_f64_any(names: &[&str], default: f64) -> f64 {
+    read_env_string_any(names)
+        .and_then(|value| value.parse::<f64>().ok())
+        .unwrap_or(default)
+}
+
+fn dir_size_bytes(path: &PathBuf) -> u64 {
+    fn walk(path: &std::path::Path) -> u64 {
+        let Ok(entries) = std::fs::read_dir(path) else {
+            return 0;
+        };
+        let mut total = 0u64;
+        for entry in entries.flatten() {
+            let entry_path = entry.path();
+            if entry_path.is_dir() {
+                total = total.saturating_add(walk(&entry_path));
+            } else if let Ok(meta) = entry.metadata() {
+                total = total.saturating_add(meta.len());
+            }
+        }
+        total
+    }
+
+    walk(path)
+}
+
 impl McpServer {
     fn new() -> Self {
         Self {
@@ -864,6 +928,37 @@ impl McpServer {
                     "required": ["intent"]
                 }
             },
+            {
+                "name": "session_start",
+                "description": "Start a new interaction session",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "session_id": { "type": "integer", "description": "Optional explicit session ID" },
+                        "metadata": { "type": "object", "description": "Optional metadata for this session" }
+                    }
+                }
+            },
+            {
+                "name": "session_end",
+                "description": "End the current interaction session",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "session_id": { "type": "integer", "description": "Optional explicit session ID" }
+                    }
+                }
+            },
+            {
+                "name": "identity_session_resume",
+                "description": "Load context from previous interactions",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "limit": { "type": "integer", "description": "Maximum number of recent records", "default": 5 }
+                    }
+                }
+            },
             // ── V2: Grounding (anti-hallucination) ─────────────────────────
             {
                 "name": "identity_ground",
@@ -1034,6 +1129,9 @@ impl McpServer {
             "negative_declare" => self.tool_negative_declare(id.clone(), &args),
             "negative_list" => self.tool_negative_list(id.clone(), &args),
             "negative_check" => self.tool_negative_check(id.clone(), &args),
+            "session_start" => self.tool_session_start(id.clone(), &args),
+            "session_end" => self.tool_session_end(id.clone(), &args),
+            "identity_session_resume" => self.tool_identity_session_resume(id.clone(), &args),
             // V2: Grounding
             "identity_ground" => self.tool_identity_ground(id.clone(), &args),
             "identity_evidence" => self.tool_identity_evidence(id.clone(), &args),
@@ -1070,22 +1168,104 @@ impl McpServer {
         };
 
         // Auto-log the tool call.
-        let summary = {
-            let s = args.to_string();
-            if s.len() <= 200 {
-                s
-            } else {
-                format!("{}...", &s[..200])
-            }
-        };
-        self.operation_log.push(IdentityOperationRecord {
-            tool_name,
-            intent: None,
-            summary,
-            timestamp: now_secs(),
-        });
+        let capture_mode = read_env_string_any(&["AID_AUTO_CAPTURE_MODE", "AUTO_CAPTURE_MODE"])
+            .unwrap_or_else(|| "summary".to_string());
+        if !capture_mode.eq_ignore_ascii_case("off") {
+            let summary =
+                if read_env_bool_any(&["AID_AUTO_CAPTURE_REDACT", "AUTO_CAPTURE_REDACT"], true) {
+                    "<redacted>".to_string()
+                } else {
+                    let max_chars = read_env_usize_any(
+                        &["AID_AUTO_CAPTURE_MAX_CHARS", "AUTO_CAPTURE_MAX_CHARS"],
+                        768,
+                    )
+                    .max(64);
+                    truncate_text(args.to_string(), max_chars)
+                };
+            self.operation_log.push(IdentityOperationRecord {
+                tool_name,
+                intent: None,
+                summary,
+                timestamp: now_secs(),
+            });
+        }
+        self.maybe_emit_storage_budget_warning();
 
         result
+    }
+
+    // ── Tool: session_start/session_end/identity_session_resume ─────────────
+
+    fn tool_session_start(&mut self, id: Value, args: &Value) -> Value {
+        let now = now_secs();
+        let session_id = args
+            .get("session_id")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(now);
+        let metadata = args.get("metadata").cloned().unwrap_or_else(|| json!({}));
+
+        self.session_start_time = Some(now);
+        self.operation_log.clear();
+
+        tool_ok(
+            id,
+            serde_json::to_string_pretty(&json!({
+                "session_id": session_id,
+                "started_at": now,
+                "metadata": metadata,
+            }))
+            .unwrap_or_default(),
+        )
+    }
+
+    fn tool_session_end(&mut self, id: Value, args: &Value) -> Value {
+        let now = now_secs();
+        let session_id = args
+            .get("session_id")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(now);
+        let started_at = self.session_start_time.take();
+        let duration_seconds = started_at.map(|start| now.saturating_sub(start));
+
+        tool_ok(
+            id,
+            serde_json::to_string_pretty(&json!({
+                "session_id": session_id,
+                "ended_at": now,
+                "started_at": started_at,
+                "duration_seconds": duration_seconds,
+                "operation_count": self.operation_log.len(),
+            }))
+            .unwrap_or_default(),
+        )
+    }
+
+    fn tool_identity_session_resume(&self, id: Value, args: &Value) -> Value {
+        let limit = args.get("limit").and_then(|v| v.as_u64()).unwrap_or(5) as usize;
+        let recent_records: Vec<Value> = self
+            .operation_log
+            .iter()
+            .rev()
+            .take(limit.max(1))
+            .map(|record| {
+                json!({
+                    "tool_name": record.tool_name,
+                    "intent": record.intent,
+                    "summary": record.summary,
+                    "timestamp": record.timestamp
+                })
+            })
+            .collect();
+
+        tool_ok(
+            id,
+            serde_json::to_string_pretty(&json!({
+                "session_start_time": self.session_start_time,
+                "operation_count": self.operation_log.len(),
+                "recent_records": recent_records
+            }))
+            .unwrap_or_default(),
+        )
     }
 
     // ── Tool: action_context ───────────────────────────────────────────────────
@@ -1129,6 +1309,46 @@ impl McpServer {
             }))
             .unwrap_or_default(),
         )
+    }
+
+    fn maybe_emit_storage_budget_warning(&self) {
+        let mode = read_env_string_any(&["AID_STORAGE_BUDGET_MODE", "STORAGE_BUDGET_MODE"])
+            .unwrap_or_else(|| "auto-rollup".to_string());
+        if mode.eq_ignore_ascii_case("off") {
+            return;
+        }
+
+        let budget_bytes = read_env_u64_any(
+            &["AID_STORAGE_BUDGET_BYTES", "STORAGE_BUDGET_BYTES"],
+            536_870_912,
+        );
+        let target_fraction = read_env_f64_any(
+            &[
+                "AID_STORAGE_BUDGET_TARGET_FRACTION",
+                "STORAGE_BUDGET_TARGET_FRACTION",
+            ],
+            0.85,
+        )
+        .clamp(0.0, 1.0);
+        let horizon_years = read_env_u64_any(
+            &[
+                "AID_STORAGE_BUDGET_HORIZON_YEARS",
+                "STORAGE_BUDGET_HORIZON_YEARS",
+            ],
+            5,
+        );
+        let threshold = (budget_bytes as f64 * target_fraction).round() as u64;
+        let used = dir_size_bytes(&self.identity_dir)
+            .saturating_add(dir_size_bytes(&self.receipt_dir))
+            .saturating_add(dir_size_bytes(&self.trust_dir))
+            .saturating_add(dir_size_bytes(&self.spawn_dir));
+
+        if used > threshold {
+            eprintln!(
+                "AID storage budget warning: used={} threshold={} mode={} horizon_years={}",
+                used, threshold, mode, horizon_years
+            );
+        }
     }
 
     // ── Tool: identity_create ─────────────────────────────────────────────────
@@ -4029,6 +4249,9 @@ mod tests {
         assert!(names.contains(&"negative_list"));
         assert!(names.contains(&"negative_check"));
         assert!(names.contains(&"action_context"));
+        assert!(names.contains(&"session_start"));
+        assert!(names.contains(&"session_end"));
+        assert!(names.contains(&"identity_session_resume"));
         // V2: Grounding tools
         assert!(names.contains(&"identity_ground"));
         assert!(names.contains(&"identity_evidence"));
@@ -4040,8 +4263,8 @@ mod tests {
         assert!(names.contains(&"identity_workspace_query"));
         assert!(names.contains(&"identity_workspace_compare"));
         assert!(names.contains(&"identity_workspace_xref"));
-        // 30 original + 1 action_context + 3 grounding + 6 workspace + 58 inventions = 98
-        assert_eq!(tools.len(), 98);
+        // 30 original + 1 action_context + 3 session + 3 grounding + 6 workspace + 58 inventions = 101
+        assert_eq!(tools.len(), 101);
     }
 
     // ── resources/list ────────────────────────────────────────────────────────
