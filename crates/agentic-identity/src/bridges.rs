@@ -130,7 +130,7 @@ impl VisionBridge for NoOpBridges {}
 impl CommBridge for NoOpBridges {}
 
 /// Configuration for which bridges are active.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct BridgeConfig {
     pub memory_enabled: bool,
     pub time_enabled: bool,
@@ -138,19 +138,6 @@ pub struct BridgeConfig {
     pub codebase_enabled: bool,
     pub vision_enabled: bool,
     pub comm_enabled: bool,
-}
-
-impl Default for BridgeConfig {
-    fn default() -> Self {
-        Self {
-            memory_enabled: false,
-            time_enabled: false,
-            contract_enabled: false,
-            codebase_enabled: false,
-            vision_enabled: false,
-            comm_enabled: false,
-        }
-    }
 }
 
 /// Hydra adapter trait — future orchestrator discovery interface.
@@ -206,7 +193,9 @@ mod tests {
         let b = NoOpBridges;
         assert!(b.check_policy("sign", "agent-1").unwrap());
         assert!(b.record_identity_action("sign", "details").is_err());
-        assert!(b.validate_trust_grant("agent-2", &["read:memory".to_string()]).unwrap());
+        assert!(b
+            .validate_trust_grant("agent-2", &["read:memory".to_string()])
+            .unwrap());
     }
 
     #[test]
@@ -226,7 +215,9 @@ mod tests {
     #[test]
     fn comm_bridge_defaults() {
         let b = NoOpBridges;
-        assert!(b.broadcast_identity_event("trust_grant", "details").is_err());
+        assert!(b
+            .broadcast_identity_event("trust_grant", "details")
+            .is_err());
         assert!(b.verify_channel_sender(1, "agent-1"));
     }
 
@@ -249,7 +240,7 @@ mod tests {
 
     #[test]
     fn noop_bridges_default_and_clone() {
-        let b = NoOpBridges::default();
+        let b = NoOpBridges;
         let _b2 = b.clone();
     }
 }

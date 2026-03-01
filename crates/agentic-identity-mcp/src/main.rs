@@ -17,7 +17,7 @@
 //! is already protected by the host environment.
 
 use std::io::{self, BufRead, Read, Write};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use clap::{Parser, Subcommand};
 use serde_json::{json, Value};
@@ -310,7 +310,7 @@ fn mcp_tool_surface_is_compact() -> bool {
         .unwrap_or(false)
 }
 
-fn compact_op_schema(ops: &[String], description: &str) -> Value {
+fn compact_op_schema(ops: &[&str], description: &str) -> Value {
     json!({
         "type": "object",
         "required": ["operation"],
@@ -351,11 +351,7 @@ fn compact_tool_definitions() -> Vec<Value> {
             "name": "identity_core",
             "description": "Compact core identity facade",
             "inputSchema": compact_op_schema(
-                &vec![
-                    "identity_create".to_string(),
-                    "identity_show".to_string(),
-                    "identity_health".to_string(),
-                ],
+                &["identity_create", "identity_show", "identity_health"],
                 "Core identity operation",
             ),
         }),
@@ -363,14 +359,14 @@ fn compact_tool_definitions() -> Vec<Value> {
             "name": "identity_actions",
             "description": "Compact actions/session facade",
             "inputSchema": compact_op_schema(
-                &vec![
-                    "action_sign".to_string(),
-                    "action_context".to_string(),
-                    "receipt_verify".to_string(),
-                    "receipt_list".to_string(),
-                    "session_start".to_string(),
-                    "session_end".to_string(),
-                    "identity_session_resume".to_string(),
+                &[
+                    "action_sign",
+                    "action_context",
+                    "receipt_verify",
+                    "receipt_list",
+                    "session_start",
+                    "session_end",
+                    "identity_session_resume",
                 ],
                 "Identity action operation",
             ),
@@ -379,12 +375,7 @@ fn compact_tool_definitions() -> Vec<Value> {
             "name": "identity_trust",
             "description": "Compact trust facade",
             "inputSchema": compact_op_schema(
-                &vec![
-                    "trust_grant".to_string(),
-                    "trust_revoke".to_string(),
-                    "trust_verify".to_string(),
-                    "trust_list".to_string(),
-                ],
+                &["trust_grant", "trust_revoke", "trust_verify", "trust_list"],
                 "Trust operation",
             ),
         }),
@@ -392,12 +383,12 @@ fn compact_tool_definitions() -> Vec<Value> {
             "name": "identity_continuity",
             "description": "Compact continuity facade",
             "inputSchema": compact_op_schema(
-                &vec![
-                    "continuity_record".to_string(),
-                    "continuity_anchor".to_string(),
-                    "continuity_heartbeat".to_string(),
-                    "continuity_status".to_string(),
-                    "continuity_gaps".to_string(),
+                &[
+                    "continuity_record",
+                    "continuity_anchor",
+                    "continuity_heartbeat",
+                    "continuity_status",
+                    "continuity_gaps",
                 ],
                 "Continuity operation",
             ),
@@ -406,12 +397,12 @@ fn compact_tool_definitions() -> Vec<Value> {
             "name": "identity_spawn",
             "description": "Compact spawn facade",
             "inputSchema": compact_op_schema(
-                &vec![
-                    "spawn_create".to_string(),
-                    "spawn_terminate".to_string(),
-                    "spawn_list".to_string(),
-                    "spawn_lineage".to_string(),
-                    "spawn_authority".to_string(),
+                &[
+                    "spawn_create",
+                    "spawn_terminate",
+                    "spawn_list",
+                    "spawn_lineage",
+                    "spawn_authority",
                 ],
                 "Spawn operation",
             ),
@@ -420,12 +411,12 @@ fn compact_tool_definitions() -> Vec<Value> {
             "name": "identity_competence",
             "description": "Compact competence facade",
             "inputSchema": compact_op_schema(
-                &vec![
-                    "competence_record".to_string(),
-                    "competence_show".to_string(),
-                    "competence_prove".to_string(),
-                    "competence_verify".to_string(),
-                    "competence_list".to_string(),
+                &[
+                    "competence_record",
+                    "competence_show",
+                    "competence_prove",
+                    "competence_verify",
+                    "competence_list",
                 ],
                 "Competence operation",
             ),
@@ -434,12 +425,12 @@ fn compact_tool_definitions() -> Vec<Value> {
             "name": "identity_negative",
             "description": "Compact negative-capability facade",
             "inputSchema": compact_op_schema(
-                &vec![
-                    "negative_prove".to_string(),
-                    "negative_verify".to_string(),
-                    "negative_declare".to_string(),
-                    "negative_list".to_string(),
-                    "negative_check".to_string(),
+                &[
+                    "negative_prove",
+                    "negative_verify",
+                    "negative_declare",
+                    "negative_list",
+                    "negative_check",
                 ],
                 "Negative capability operation",
             ),
@@ -448,11 +439,7 @@ fn compact_tool_definitions() -> Vec<Value> {
             "name": "identity_grounding",
             "description": "Compact grounding facade",
             "inputSchema": compact_op_schema(
-                &vec![
-                    "identity_ground".to_string(),
-                    "identity_evidence".to_string(),
-                    "identity_suggest".to_string(),
-                ],
+                &["identity_ground", "identity_evidence", "identity_suggest"],
                 "Grounding operation",
             ),
         }),
@@ -460,13 +447,13 @@ fn compact_tool_definitions() -> Vec<Value> {
             "name": "identity_workspace",
             "description": "Compact workspace facade",
             "inputSchema": compact_op_schema(
-                &vec![
-                    "identity_workspace_create".to_string(),
-                    "identity_workspace_add".to_string(),
-                    "identity_workspace_list".to_string(),
-                    "identity_workspace_query".to_string(),
-                    "identity_workspace_compare".to_string(),
-                    "identity_workspace_xref".to_string(),
+                &[
+                    "identity_workspace_create",
+                    "identity_workspace_add",
+                    "identity_workspace_list",
+                    "identity_workspace_query",
+                    "identity_workspace_compare",
+                    "identity_workspace_xref",
                 ],
                 "Workspace operation",
             ),
@@ -474,10 +461,7 @@ fn compact_tool_definitions() -> Vec<Value> {
         json!({
             "name": "identity_inventions",
             "description": "Compact inventions facade for all advanced identity tools",
-            "inputSchema": compact_op_schema(
-                &invention_tool_names(),
-                "Identity invention operation",
-            ),
+            "inputSchema": compact_op_schema(&invention_tool_names().iter().map(String::as_str).collect::<Vec<_>>(), "Identity invention operation"),
         }),
     ]
 }
@@ -602,7 +586,7 @@ fn normalize_compact_tool_call(
     Ok((resolved, params))
 }
 
-fn dir_size_bytes(path: &PathBuf) -> u64 {
+fn dir_size_bytes(path: &Path) -> u64 {
     fn walk(path: &std::path::Path) -> u64 {
         let Ok(entries) = std::fs::read_dir(path) else {
             return 0;
