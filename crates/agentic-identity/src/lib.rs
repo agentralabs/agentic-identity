@@ -5,6 +5,7 @@
 //! competence proofs, and negative capability proofs
 //! for AI agents operating via MCP.
 
+pub mod bridges;
 pub mod competence;
 pub mod continuity;
 pub mod contracts;
