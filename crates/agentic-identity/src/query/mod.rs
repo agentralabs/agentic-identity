@@ -18,14 +18,14 @@
 //! 3. Sorts the results according to [`SortOrder`].
 //! 4. Applies an optional result limit.
 
-pub mod intent;
-pub mod delta;
 pub mod budget;
+pub mod delta;
+pub mod intent;
 pub mod pagination;
 
-pub use intent::ExtractionIntent;
-pub use delta::{ChangeType, DeltaQuery};
 pub use budget::TokenBudget;
+pub use delta::{ChangeType, DeltaQuery};
+pub use intent::ExtractionIntent;
 pub use pagination::CursorPage;
 
 use crate::identity::IdentityId;

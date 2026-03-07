@@ -7,7 +7,6 @@
 
 pub mod bridges;
 pub mod cache;
-pub mod metrics;
 pub mod competence;
 pub mod continuity;
 pub mod contracts;
@@ -15,6 +14,7 @@ pub mod crypto;
 pub mod error;
 pub mod identity;
 pub mod index;
+pub mod metrics;
 pub mod negative;
 pub mod query;
 pub mod receipt;

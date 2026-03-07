@@ -191,7 +191,7 @@ fn parse_revocation_reason(s: &str) -> RevocationReason {
 // ── JSON-RPC helpers ──────────────────────────────────────────────────────────
 
 /// Inject token conservation parameters into every tool's inputSchema.
-fn inject_token_conservation_params(tools: &mut Vec<Value>) {
+fn inject_token_conservation_params(tools: &mut [Value]) {
     let conservation_props = json!({
         "include_content": { "type": "boolean", "default": false, "description": "Return full content (default: IDs only)" },
         "intent": { "type": "string", "enum": ["exists", "ids", "summary", "fields", "full"], "description": "Extraction intent level" },
@@ -3963,7 +3963,10 @@ impl McpServer {
             .unwrap_or(5) as usize;
 
         match self.workspace_manager.compare(workspace_id, item, max_per) {
-            Ok(result) => tool_ok(id, serde_json::to_string_pretty(&result).unwrap_or_else(|_| "{}".to_string())),
+            Ok(result) => tool_ok(
+                id,
+                serde_json::to_string_pretty(&result).unwrap_or_else(|_| "{}".to_string()),
+            ),
             Err(e) => tool_error(id, e),
         }
     }
@@ -3979,7 +3982,10 @@ impl McpServer {
         };
 
         match self.workspace_manager.cross_reference(workspace_id, item) {
-            Ok(result) => tool_ok(id, serde_json::to_string_pretty(&result).unwrap_or_else(|_| "{}".to_string())),
+            Ok(result) => tool_ok(
+                id,
+                serde_json::to_string_pretty(&result).unwrap_or_else(|_| "{}".to_string()),
+            ),
             Err(e) => tool_error(id, e),
         }
     }
@@ -4176,7 +4182,9 @@ impl IdentityWorkspaceManager {
         max_per_context: usize,
     ) -> Result<Value, String> {
         let results = self.query_all(workspace_id, item, max_per_context)?;
-        let workspace = self.workspaces.get(workspace_id)
+        let workspace = self
+            .workspaces
+            .get(workspace_id)
             .ok_or_else(|| format!("workspace '{}' not found", workspace_id))?;
 
         let mut found_in = Vec::new();
@@ -6195,7 +6203,10 @@ mod tests {
         assert!(is_ok(&resp));
         assert!(!is_tool_error(&resp));
         let j = tool_json(&resp);
-        assert!(j["workspace_id"].as_str().unwrap_or_default().starts_with("iws_"));
+        assert!(j["workspace_id"]
+            .as_str()
+            .unwrap_or_default()
+            .starts_with("iws_"));
         assert_eq!(j["status"], "created");
         assert_eq!(j["name"], "test-workspace");
     }
@@ -6262,7 +6273,10 @@ mod tests {
         assert!(is_ok(&add_resp));
         assert!(!is_tool_error(&add_resp));
         let j = tool_json(&add_resp);
-        assert!(j["context_id"].as_str().unwrap_or_default().starts_with("ictx_"));
+        assert!(j["context_id"]
+            .as_str()
+            .unwrap_or_default()
+            .starts_with("ictx_"));
         assert_eq!(j["status"], "added");
     }
 
