@@ -52,10 +52,26 @@ anyhow = { workspace = true, optional = true }
 [dev-dependencies]
 tempfile.workspace = true
 criterion.workspace = true
+serde_json.workspace = true
 
 [[bench]]
 name = "crypto_bench"
 path = "../../benches/crypto_bench.rs"
+harness = false
+
+[[bench]]
+name = "mcp_bench"
+path = "../../benches/mcp_bench.rs"
+harness = false
+
+[[bench]]
+name = "core_bench"
+path = "../../benches/core_bench.rs"
+harness = false
+
+[[bench]]
+name = "stress_bench"
+path = "../../benches/stress_bench.rs"
 harness = false
 
 # CLI integration tests

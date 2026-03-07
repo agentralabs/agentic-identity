@@ -525,9 +525,9 @@ pub fn execute_identity_receipt_timeline(server: &McpServer, id: Value, args: &V
         })
         .collect();
 
-    let time_span = if receipts.len() >= 2 {
-        let first = receipts.first().unwrap().timestamp;
-        let last = receipts.last().unwrap().timestamp;
+    let time_span = if let (Some(first_r), Some(last_r)) = (receipts.first(), receipts.last()) {
+        let first = first_r.timestamp;
+        let last = last_r.timestamp;
         let span_secs = (last - first) / 1_000_000;
         json!({
             "first": micros_to_display(first),

@@ -6,6 +6,8 @@
 //! for AI agents operating via MCP.
 
 pub mod bridges;
+pub mod cache;
+pub mod metrics;
 pub mod competence;
 pub mod continuity;
 pub mod contracts;

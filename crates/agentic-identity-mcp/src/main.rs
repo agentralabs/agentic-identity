@@ -72,7 +72,7 @@ enum Command {
 // ── Directory helpers ─────────────────────────────────────────────────────────
 
 fn agentic_dir() -> PathBuf {
-    let home = std::env::var("HOME").expect("HOME not set");
+    let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
     PathBuf::from(home).join(".agentic")
 }
 
@@ -189,6 +189,31 @@ fn parse_revocation_reason(s: &str) -> RevocationReason {
 }
 
 // ── JSON-RPC helpers ──────────────────────────────────────────────────────────
+
+/// Inject token conservation parameters into every tool's inputSchema.
+fn inject_token_conservation_params(tools: &mut Vec<Value>) {
+    let conservation_props = json!({
+        "include_content": { "type": "boolean", "default": false, "description": "Return full content (default: IDs only)" },
+        "intent": { "type": "string", "enum": ["exists", "ids", "summary", "fields", "full"], "description": "Extraction intent level" },
+        "since": { "type": "integer", "description": "Only return changes since this Unix timestamp" },
+        "token_budget": { "type": "integer", "description": "Maximum token budget for response" },
+        "max_results": { "type": "integer", "default": 10, "description": "Maximum number of results" },
+        "cursor": { "type": "string", "description": "Pagination cursor for next page" }
+    });
+    for tool in tools.iter_mut() {
+        if let Some(schema) = tool.get_mut("inputSchema") {
+            if let Some(props) = schema.get_mut("properties") {
+                if let Some(props_obj) = props.as_object_mut() {
+                    if let Some(conservation_obj) = conservation_props.as_object() {
+                        for (k, v) in conservation_obj {
+                            props_obj.entry(k.clone()).or_insert_with(|| v.clone());
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
 
 fn ok_result(id: Value, result: Value) -> Value {
     json!({
@@ -1366,6 +1391,7 @@ impl McpServer {
             arr.extend(invention_accountability::all_definitions());
             arr.extend(invention_federation::all_definitions());
             arr.extend(invention_resilience::all_definitions());
+            inject_token_conservation_params(arr);
         }
         ok_result(id, json!({ "tools": tools_list }))
     }
@@ -3657,7 +3683,7 @@ impl McpServer {
                     "reason": "No trust grants, receipts, or competence records match this claim",
                     "suggestions": []
                 }))
-                .unwrap(),
+                .unwrap_or_else(|_| "{}".to_string()),
             );
         }
 
@@ -3669,7 +3695,7 @@ impl McpServer {
                 "evidence_count": evidence.len(),
                 "evidence": evidence
             }))
-            .unwrap(),
+            .unwrap_or_else(|_| "{}".to_string()),
         )
     }
 
@@ -3760,7 +3786,7 @@ impl McpServer {
                 "count": items.len(),
                 "evidence": items
             }))
-            .unwrap(),
+            .unwrap_or_else(|_| "{}".to_string()),
         )
     }
 
@@ -3825,7 +3851,7 @@ impl McpServer {
                 "count": suggestions.len(),
                 "suggestions": suggestions
             }))
-            .unwrap(),
+            .unwrap_or_else(|_| "{}".to_string()),
         )
     }
 
@@ -3842,7 +3868,7 @@ impl McpServer {
             serde_json::to_string_pretty(&json!({
                 "workspace_id": ws_id, "name": name, "status": "created"
             }))
-            .unwrap(),
+            .unwrap_or_else(|_| "{}".to_string()),
         )
     }
 
@@ -3867,7 +3893,7 @@ impl McpServer {
         match self.workspace_manager.add_context(workspace_id, path, role, label) {
             Ok(ctx_id) => tool_ok(id, serde_json::to_string_pretty(&json!({
                 "context_id": ctx_id, "workspace_id": workspace_id, "role": role, "status": "added"
-            })).unwrap()),
+            })).unwrap_or_else(|_| "{}".to_string())),
             Err(e) => tool_error(id, e),
         }
     }
@@ -3885,7 +3911,7 @@ impl McpServer {
                     "count": items.len(),
                     "contexts": items
                 }))
-                .unwrap(),
+                .unwrap_or_else(|_| "{}".to_string()),
             ),
             Err(e) => tool_error(id, e),
         }
@@ -3916,7 +3942,7 @@ impl McpServer {
                     .sum();
                 tool_ok(id, serde_json::to_string_pretty(&json!({
                     "workspace_id": workspace_id, "query": query, "total_matches": total, "results": results
-                })).unwrap())
+                })).unwrap_or_else(|_| "{}".to_string()))
             }
             Err(e) => tool_error(id, e),
         }
@@ -3937,7 +3963,7 @@ impl McpServer {
             .unwrap_or(5) as usize;
 
         match self.workspace_manager.compare(workspace_id, item, max_per) {
-            Ok(result) => tool_ok(id, serde_json::to_string_pretty(&result).unwrap()),
+            Ok(result) => tool_ok(id, serde_json::to_string_pretty(&result).unwrap_or_else(|_| "{}".to_string())),
             Err(e) => tool_error(id, e),
         }
     }
@@ -3953,7 +3979,7 @@ impl McpServer {
         };
 
         match self.workspace_manager.cross_reference(workspace_id, item) {
-            Ok(result) => tool_ok(id, serde_json::to_string_pretty(&result).unwrap()),
+            Ok(result) => tool_ok(id, serde_json::to_string_pretty(&result).unwrap_or_else(|_| "{}".to_string())),
             Err(e) => tool_error(id, e),
         }
     }
@@ -4150,7 +4176,8 @@ impl IdentityWorkspaceManager {
         max_per_context: usize,
     ) -> Result<Value, String> {
         let results = self.query_all(workspace_id, item, max_per_context)?;
-        let workspace = self.workspaces.get(workspace_id).unwrap();
+        let workspace = self.workspaces.get(workspace_id)
+            .ok_or_else(|| format!("workspace '{}' not found", workspace_id))?;
 
         let mut found_in = Vec::new();
         let mut missing_from = Vec::new();
@@ -6168,7 +6195,7 @@ mod tests {
         assert!(is_ok(&resp));
         assert!(!is_tool_error(&resp));
         let j = tool_json(&resp);
-        assert!(j["workspace_id"].as_str().unwrap().starts_with("iws_"));
+        assert!(j["workspace_id"].as_str().unwrap_or_default().starts_with("iws_"));
         assert_eq!(j["status"], "created");
         assert_eq!(j["name"], "test-workspace");
     }
@@ -6190,7 +6217,7 @@ mod tests {
             }));
             assert!(!is_tool_error(&resp));
             let j = tool_json(&resp);
-            ws_ids.push(j["workspace_id"].as_str().unwrap().to_string());
+            ws_ids.push(j["workspace_id"].as_str().unwrap_or_default().to_string());
         }
 
         // All IDs should be distinct.
@@ -6235,7 +6262,7 @@ mod tests {
         assert!(is_ok(&add_resp));
         assert!(!is_tool_error(&add_resp));
         let j = tool_json(&add_resp);
-        assert!(j["context_id"].as_str().unwrap().starts_with("ictx_"));
+        assert!(j["context_id"].as_str().unwrap_or_default().starts_with("ictx_"));
         assert_eq!(j["status"], "added");
     }
 
@@ -6643,10 +6670,10 @@ mod tests {
         );
         assert!(found_in
             .iter()
-            .any(|v| v.as_str().unwrap().contains("has-deploy")));
+            .any(|v| v.as_str().unwrap_or_default().contains("has-deploy")));
         assert!(missing_from
             .iter()
-            .any(|v| v.as_str().unwrap().contains("no-deploy")));
+            .any(|v| v.as_str().unwrap_or_default().contains("no-deploy")));
     }
 
     #[test]
@@ -6711,7 +6738,7 @@ mod tests {
         assert!(!j["present_in"].as_array().unwrap().is_empty());
         assert!(!j["absent_from"].as_array().unwrap().is_empty());
         assert!(
-            j["coverage"].as_str().unwrap().contains("/"),
+            j["coverage"].as_str().unwrap_or_default().contains("/"),
             "Coverage should be in N/M format"
         );
     }
@@ -6981,7 +7008,7 @@ mod tests {
             assert!(is_ok(&resp));
             let j = tool_json(&resp);
             assert_eq!(
-                j["status"].as_str().unwrap(),
+                j["status"].as_str().unwrap_or_default(),
                 *expected,
                 "Claim '{}' should be {}, got {}",
                 claim,
@@ -7054,12 +7081,12 @@ mod tests {
         let contexts = j["contexts"].as_array().unwrap();
         for (i, ctx) in contexts.iter().enumerate() {
             assert_eq!(
-                ctx["role"].as_str().unwrap(),
+                ctx["role"].as_str().unwrap_or_default(),
                 roles[i],
                 "Role mismatch at index {i}"
             );
             assert_eq!(
-                ctx["label"].as_str().unwrap(),
+                ctx["label"].as_str().unwrap_or_default(),
                 labels[i],
                 "Label mismatch at index {i}"
             );
@@ -7199,6 +7226,6 @@ mod tests {
         let xj = tool_json(&xref_resp);
         assert!(!xj["present_in"].as_array().unwrap().is_empty());
         assert!(!xj["absent_from"].as_array().unwrap().is_empty());
-        assert!(xj["coverage"].as_str().unwrap().contains("/"));
+        assert!(xj["coverage"].as_str().unwrap_or_default().contains("/"));
     }
 }

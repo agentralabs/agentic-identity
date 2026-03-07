@@ -120,7 +120,7 @@ pub fn execute_identity_trust_infer(server: &McpServer, id: Value, args: &Value)
                 "paths": [],
                 "confidence": 0.0,
             }))
-            .unwrap(),
+            .unwrap_or_else(|_| "{}".to_string()),
         );
     }
 
@@ -147,7 +147,7 @@ pub fn execute_identity_trust_infer(server: &McpServer, id: Value, args: &Value)
             "confidence": confidence,
             "paths": paths.iter().take(5).collect::<Vec<_>>(),
         }))
-        .unwrap(),
+        .unwrap_or_else(|_| "{}".to_string()),
     )
 }
 
@@ -269,7 +269,7 @@ pub fn execute_identity_trust_paths(server: &McpServer, id: Value, args: &Value)
             "reverse": reverse_paths.iter().take(10).collect::<Vec<_>>(),
             "total_grants_in_network": grants.len(),
         }))
-        .unwrap(),
+        .unwrap_or_else(|_| "{}".to_string()),
     )
 }
 
@@ -405,7 +405,7 @@ pub fn execute_identity_trust_recommend(server: &McpServer, id: Value, args: &Va
             "revoked_grants": revoked_count,
             "reasons": reasons,
         }))
-        .unwrap(),
+        .unwrap_or_else(|_| "{}".to_string()),
     )
 }
 
@@ -515,7 +515,7 @@ pub fn execute_identity_revoke_cascade_preview(
                 "No active dependent grants will be affected".to_string()
             },
         }))
-        .unwrap(),
+        .unwrap_or_else(|_| "{}".to_string()),
     )
 }
 
@@ -632,7 +632,7 @@ pub fn execute_identity_revoke_cascade_execute(
             "failed": failed,
             "timestamp": now_secs(),
         }))
-        .unwrap(),
+        .unwrap_or_else(|_| "{}".to_string()),
     )
 }
 
@@ -719,7 +719,7 @@ pub fn execute_identity_revoke_cascade_recover(
                 "Re-issue affected grants as direct grants to eliminate delegation chain dependency"
             },
         }))
-        .unwrap(),
+        .unwrap_or_else(|_| "{}".to_string()),
     )
 }
 
@@ -833,7 +833,7 @@ pub fn execute_identity_capability_negotiate(server: &McpServer, id: Value, args
                 _ => "No delegation path exists; request a direct grant from an authority",
             },
         }))
-        .unwrap(),
+        .unwrap_or_else(|_| "{}".to_string()),
     )
 }
 
@@ -935,7 +935,7 @@ pub fn execute_identity_capability_available(server: &McpServer, id: Value, args
             "total_capabilities": capabilities.len(),
             "capabilities": capabilities,
         }))
-        .unwrap(),
+        .unwrap_or_else(|_| "{}".to_string()),
     )
 }
 
@@ -1010,7 +1010,7 @@ pub fn execute_identity_capability_terms(server: &McpServer, id: Value, args: &V
             "grants_found": terms.len(),
             "terms": terms,
         }))
-        .unwrap(),
+        .unwrap_or_else(|_| "{}".to_string()),
     )
 }
 
@@ -1161,7 +1161,7 @@ pub fn execute_identity_team_create(server: &McpServer, id: Value, args: &Value)
             "members": members,
             "created_at": now_secs(),
         }))
-        .unwrap(),
+        .unwrap_or_else(|_| "{}".to_string()),
     )
 }
 
@@ -1256,7 +1256,7 @@ pub fn execute_identity_team_add_member(server: &McpServer, id: Value, args: &Va
             "total_members": member_count,
             "quorum": team.get("quorum"),
         }))
-        .unwrap(),
+        .unwrap_or_else(|_| "{}".to_string()),
     )
 }
 
@@ -1391,7 +1391,7 @@ pub fn execute_identity_team_act(server: &McpServer, id: Value, args: &Value) ->
             "status": if quorum_met { "executed" } else { "pending_quorum" },
             "additional_signers_needed": if quorum_met { 0 } else { quorum - valid_signers.len() },
         }))
-        .unwrap(),
+        .unwrap_or_else(|_| "{}".to_string()),
     )
 }
 
@@ -1508,7 +1508,7 @@ pub fn execute_identity_team_verify(server: &McpServer, id: Value, args: &Value)
                     "timestamp": action.get("timestamp"),
                     "status": action.get("status"),
                 }))
-                .unwrap(),
+                .unwrap_or_else(|_| "{}".to_string()),
             )
         }
         None => tool_error(

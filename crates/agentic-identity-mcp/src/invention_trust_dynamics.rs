@@ -566,17 +566,17 @@ pub fn execute_identity_competence_get(server: &McpServer, id: Value, args: &Val
         let mid = timestamps.len() / 2;
         let first_half = &timestamps[..mid];
         let second_half = &timestamps[mid..];
-        let avg_gap_first = if first_half.len() > 1 {
-            (first_half.last().unwrap() - first_half.first().unwrap()) as f64
-                / (first_half.len() - 1) as f64
-        } else {
-            0.0
+        let avg_gap_first = match (first_half.last(), first_half.first()) {
+            (Some(l), Some(f)) if first_half.len() > 1 => {
+                (*l - *f) as f64 / (first_half.len() - 1) as f64
+            }
+            _ => 0.0,
         };
-        let avg_gap_second = if second_half.len() > 1 {
-            (second_half.last().unwrap() - second_half.first().unwrap()) as f64
-                / (second_half.len() - 1) as f64
-        } else {
-            0.0
+        let avg_gap_second = match (second_half.last(), second_half.first()) {
+            (Some(l), Some(f)) if second_half.len() > 1 => {
+                (*l - *f) as f64 / (second_half.len() - 1) as f64
+            }
+            _ => 0.0,
         };
         if avg_gap_second < avg_gap_first * 0.8 {
             "increasing"
