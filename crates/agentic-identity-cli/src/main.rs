@@ -9,6 +9,8 @@ use std::path::{Path, PathBuf};
 use anyhow::{anyhow, Context, Result};
 use clap::{Parser, Subcommand};
 use serde::{Deserialize, Serialize};
+#[cfg(windows)]
+use windows_sys::Win32::Security::Credentials::{CredFree, CredReadW, CREDENTIALW, CRED_TYPE_GENERIC};
 
 use agentic_identity::competence::{self, AttemptOutcome, CompetenceDomain};
 use agentic_identity::continuity::{
@@ -220,6 +222,112 @@ fn read_passphrase(prompt: &str) -> String {
         .read_line(&mut passphrase)
         .expect("Failed to read passphrase");
     passphrase.trim().to_string()
+}
+
+#[cfg(windows)]
+fn decode_credential_blob(blob: *const u8, len: usize) -> Option<String> {
+    if blob.is_null() || len == 0 {
+        return None;
+    }
+
+    let bytes = unsafe { std::slice::from_raw_parts(blob, len) };
+    if len % 2 == 0 {
+        let utf16: Vec<u16> = bytes
+            .chunks_exact(2)
+            .map(|pair| u16::from_le_bytes([pair[0], pair[1]]))
+            .collect();
+        if let Ok(decoded) = String::from_utf16(&utf16) {
+            let trimmed = decoded.trim_end_matches('\0').to_string();
+            if !trimmed.is_empty() {
+                return Some(trimmed);
+            }
+        }
+    }
+
+    String::from_utf8(bytes.to_vec())
+        .ok()
+        .map(|value| value.trim_end_matches('\0').to_string())
+        .filter(|value| !value.is_empty())
+}
+
+#[cfg(windows)]
+fn read_wcm_password(target_name: &str) -> Option<String> {
+    let mut target_utf16: Vec<u16> = target_name.encode_utf16().collect();
+    target_utf16.push(0);
+
+    let mut credential_ptr: *mut CREDENTIALW = std::ptr::null_mut();
+    let status = unsafe {
+        CredReadW(
+            target_utf16.as_ptr(),
+            CRED_TYPE_GENERIC,
+            0,
+            &mut credential_ptr,
+        )
+    };
+    if status == 0 || credential_ptr.is_null() {
+        return None;
+    }
+
+    let password = unsafe {
+        decode_credential_blob(
+            (*credential_ptr).CredentialBlob,
+            (*credential_ptr).CredentialBlobSize as usize,
+        )
+    };
+
+    unsafe {
+        CredFree(credential_ptr as *mut _);
+    }
+
+    password
+}
+
+#[cfg(not(windows))]
+fn read_wcm_password(_target_name: &str) -> Option<String> {
+    None
+}
+
+fn stored_identity_passphrase(identity_name: &str) -> Option<String> {
+    let targets = [
+        format!("agentic-identity/{identity_name}"),
+        format!("aid/{identity_name}"),
+    ];
+
+    for target in targets {
+        if let Some(password) = read_wcm_password(&target) {
+            return Some(password);
+        }
+    }
+
+    None
+}
+
+fn resolve_identity_passphrase(identity_name: &str, prompt: &str) -> String {
+    stored_identity_passphrase(identity_name).unwrap_or_else(|| read_passphrase(prompt))
+}
+
+fn resolve_new_identity_passphrase(identity_name: &str) -> Result<String> {
+    if let Some(passphrase) = stored_identity_passphrase(identity_name) {
+        if passphrase.is_empty() {
+            return Err(anyhow!(
+                "stored Windows Credential Manager passphrase for '{}' is empty",
+                identity_name
+            ));
+        }
+        return Ok(passphrase);
+    }
+
+    let passphrase = read_passphrase("Enter passphrase for new identity: ");
+    if passphrase.is_empty() {
+        return Err(anyhow!("passphrase cannot be empty"));
+    }
+
+    let confirm = read_passphrase("Confirm passphrase: ");
+    if passphrase != confirm {
+        return Err(anyhow!("passphrases do not match"));
+    }
+
+    Ok(passphrase)
 }
 
 // ── Time formatting helpers ───────────────────────────────────────────────────
@@ -771,7 +879,7 @@ fn main() {
     let identity_name = cli.identity.clone();
 
     let result = match cli.command {
-        Commands::Init { name } => cmd_init(name, verbose),
+        Commands::Init { name } => cmd_init(&identity_name, name, verbose),
         Commands::Info { identity } => {
             let name = identity.unwrap_or(identity_name);
             cmd_show(&name, verbose)
@@ -947,14 +1055,14 @@ fn main() {
 // ── Command implementations ───────────────────────────────────────────────────
 
 /// `aid init [--name NAME]`
-fn cmd_init(name: Option<String>, verbose: bool) -> Result<()> {
-    let name = name.unwrap_or_else(|| "default".to_string());
-    let path = identity_path(&name);
+fn cmd_init(identity_name: &str, name: Option<String>, verbose: bool) -> Result<()> {
+    let display_name = name.unwrap_or_else(|| identity_name.to_string());
+    let path = identity_path(identity_name);
 
     if path.exists() {
         return Err(anyhow!(
             "identity '{}' already exists at {}",
-            name,
+            identity_name,
             path.display()
         ));
     }
@@ -962,21 +1070,13 @@ fn cmd_init(name: Option<String>, verbose: bool) -> Result<()> {
     // Create the identity directory if needed
     std::fs::create_dir_all(identity_dir()).context("failed to create identity directory")?;
 
-    let passphrase = read_passphrase("Enter passphrase for new identity: ");
-    if passphrase.is_empty() {
-        return Err(anyhow!("passphrase cannot be empty"));
-    }
-    let confirm = read_passphrase("Confirm passphrase: ");
-    if passphrase != confirm {
-        return Err(anyhow!("passphrases do not match"));
-    }
-
-    let anchor = IdentityAnchor::new(Some(name.clone()));
+    let passphrase = resolve_new_identity_passphrase(identity_name)?;
+    let anchor = IdentityAnchor::new(Some(display_name.clone()));
     let id = anchor.id();
 
     save_identity(&anchor, &path, &passphrase).context("failed to save identity")?;
 
-    println!("Created identity '{name}'");
+    println!("Created identity '{identity_name}'");
     println!("  ID:   {id}");
     println!("  File: {}", path.display());
 
@@ -1118,7 +1218,10 @@ fn cmd_sign(
         ));
     }
 
-    let passphrase = read_passphrase(&format!("Passphrase for identity '{}': ", identity_name));
+    let passphrase = resolve_identity_passphrase(
+        identity_name,
+        &format!("Passphrase for identity '{}': ", identity_name),
+    );
     let anchor =
         load_identity(&path, &passphrase).context("failed to load identity (wrong passphrase?)")?;
 
@@ -1349,7 +1452,10 @@ fn cmd_trust_grant(
         ));
     }
 
-    let passphrase = read_passphrase(&format!("Passphrase for identity '{}': ", identity_name));
+    let passphrase = resolve_identity_passphrase(
+        identity_name,
+        &format!("Passphrase for identity '{}': ", identity_name),
+    );
     let anchor =
         load_identity(&path, &passphrase).context("failed to load identity (wrong passphrase?)")?;
 
@@ -1442,7 +1548,10 @@ fn cmd_trust_revoke(
         ));
     }
 
-    let passphrase = read_passphrase(&format!("Passphrase for identity '{}': ", identity_name));
+    let passphrase = resolve_identity_passphrase(
+        identity_name,
+        &format!("Passphrase for identity '{}': ", identity_name),
+    );
     let anchor =
         load_identity(&path, &passphrase).context("failed to load identity (wrong passphrase?)")?;
 
@@ -1601,7 +1710,7 @@ fn cmd_rotate(identity_name: &str, reason_str: Option<&str>, verbose: bool) -> R
         ));
     }
 
-    let passphrase = read_passphrase(&format!(
+    let passphrase = resolve_identity_passphrase(identity_name, &format!(
         "Current passphrase for identity '{}': ",
         identity_name
     ));
@@ -2071,7 +2180,10 @@ fn cmd_continuity_record(
         ));
     }
 
-    let passphrase = read_passphrase(&format!("Passphrase for identity '{}': ", identity_name));
+    let passphrase = resolve_identity_passphrase(
+        identity_name,
+        &format!("Passphrase for identity '{}': ", identity_name),
+    );
     let anchor = load_identity(&path, &passphrase).context("failed to load identity")?;
 
     let event_type = parse_experience_type(type_str)?;
@@ -2101,7 +2213,10 @@ fn cmd_continuity_anchor(identity_name: &str, type_str: &str, verbose: bool) -> 
         return Err(anyhow!("identity '{}' not found", identity_name));
     }
 
-    let passphrase = read_passphrase(&format!("Passphrase for identity '{}': ", identity_name));
+    let passphrase = resolve_identity_passphrase(
+        identity_name,
+        &format!("Passphrase for identity '{}': ", identity_name),
+    );
     let anchor = load_identity(&path, &passphrase).context("failed to load identity")?;
 
     let anchor_type = parse_anchor_type(type_str)?;
@@ -2142,7 +2257,10 @@ fn cmd_continuity_heartbeat(identity_name: &str, status_str: &str, verbose: bool
         return Err(anyhow!("identity '{}' not found", identity_name));
     }
 
-    let passphrase = read_passphrase(&format!("Passphrase for identity '{}': ", identity_name));
+    let passphrase = resolve_identity_passphrase(
+        identity_name,
+        &format!("Passphrase for identity '{}': ", identity_name),
+    );
     let anchor = load_identity(&path, &passphrase).context("failed to load identity")?;
 
     let status = parse_heartbeat_status(status_str);
@@ -2217,7 +2335,10 @@ fn cmd_spawn_create(
         ));
     }
 
-    let passphrase = read_passphrase(&format!("Passphrase for identity '{}': ", identity_name));
+    let passphrase = resolve_identity_passphrase(
+        identity_name,
+        &format!("Passphrase for identity '{}': ", identity_name),
+    );
     let anchor = load_identity(&path, &passphrase).context("failed to load identity")?;
 
     let spawn_type = parse_spawn_type(type_str)?;
@@ -2342,7 +2463,10 @@ fn cmd_competence_record(
         return Err(anyhow!("identity '{}' not found", identity_name));
     }
 
-    let passphrase = read_passphrase(&format!("Passphrase for identity '{}': ", identity_name));
+    let passphrase = resolve_identity_passphrase(
+        identity_name,
+        &format!("Passphrase for identity '{}': ", identity_name),
+    );
     let anchor = load_identity(&path, &passphrase).context("failed to load identity")?;
 
     let outcome = match outcome_str.to_lowercase().as_str() {
@@ -2461,7 +2585,10 @@ fn cmd_cannot_declare(
         return Err(anyhow!("identity '{}' not found", identity_name));
     }
 
-    let passphrase = read_passphrase(&format!("Passphrase for identity '{}': ", identity_name));
+    let passphrase = resolve_identity_passphrase(
+        identity_name,
+        &format!("Passphrase for identity '{}': ", identity_name),
+    );
     let anchor = load_identity(&path, &passphrase).context("failed to load identity")?;
 
     let capabilities: Vec<String> = capabilities_str
